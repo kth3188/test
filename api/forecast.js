@@ -3,19 +3,24 @@ const fs = require('fs');
 const path = require('path');
 
 // URL 인코딩된 서비스 키 사용
-const serviceKey = 'cPdGKAsUpOaVmBWNujf8zCL0q+XyzMSMGebwv4/Lt+MJZCz8lOidIVcww3rhbqJ/yO8OLyRi0QJY/imdYx7zSg==';
+const serviceKey = 'cPdGKAsUpOaVmBWNujf8zCL0q+XyzMSMGebwv4/Lt+MJZCz8lOidIVcww3rhbqJ/yO8OLyRi0QJY/imdYx7zSg==' ;
 
-// JSON 파일에서 장소와 좌표 매핑 데이터 로드
-const locations = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'locations.json'), 'utf-8'));
+// 루트 디렉토리에서 locations.json 파일 읽기
+const locationsFilePath = path.join(__dirname, 'locations.json'); // 루트 디렉토리의 locations.json 파일을 읽음
+
+let locations = [];
+try {
+  // JSON 파일 읽기
+  locations = JSON.parse(fs.readFileSync(locationsFilePath, 'utf-8'));
+} catch (error) {
+  console.error("Error parsing locations.json:", error.message);
+  locations = [];  // 데이터가 없으면 빈 배열로 설정
+}
 
 // 날짜와 시간을 자동으로 계산하는 함수 (이전 시간대 내림 처리)
 const getCurrentDateTime = () => {
   const now = new Date();
-
-  // base_date (YYYYMMDD) 계산
   const base_date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-
-  // base_time (HHmm) 계산 (이전 시간대로 내림 처리)
   const hours = now.getHours();
   let base_time = '';
 
@@ -36,7 +41,6 @@ const getCurrentDateTime = () => {
 module.exports = async (req, res) => {
   let { province, city, town, base_date, base_time } = req.query;
 
-  // 지역 정보를 기반으로 nx, ny 좌표 찾기
   const locationData = locations.find(item => 
     item.province === province && item.city === city && item.town === town
   );
@@ -47,7 +51,7 @@ module.exports = async (req, res) => {
 
   const { nx, ny } = locationData;
 
-  // 날짜와 시간이 없을 경우 자동 설정 (오늘 날짜와 현재 시각 기준)
+  // 날짜와 시간이 없을 경우 자동 설정
   if (!base_date || !base_time) {
     const { base_date: currentBaseDate, base_time: currentBaseTime } = getCurrentDateTime();
     base_date = base_date || currentBaseDate;
