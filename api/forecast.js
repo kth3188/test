@@ -4,6 +4,7 @@ const axios = require('axios');
 const serviceKey = 'cPdGKAsUpOaVmBWNujf8zCL0q+XyzMSMGebwv4/Lt+MJZCz8lOidIVcww3rhbqJ/yO8OLyRi0QJY/imdYx7zSg==';
 
 // 환경 변수에서 장소와 좌표 매핑 데이터 로드
+// Vercel에서 환경 변수로 `LOCATIONS_JSON` 값을 가져옵니다.
 const locations = JSON.parse(process.env.LOCATIONS_JSON);
 
 // 날짜와 시간을 자동으로 계산하는 함수 (이전 시간대 내림 처리)
