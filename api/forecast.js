@@ -1,11 +1,10 @@
 const axios = require('axios');
-const fs = require('fs');
 
 // URL 인코딩된 서비스 키 사용
 const serviceKey = 'cPdGKAsUpOaVmBWNujf8zCL0q+XyzMSMGebwv4/Lt+MJZCz8lOidIVcww3rhbqJ/yO8OLyRi0QJY/imdYx7zSg==';
 
-// JSON 파일에서 장소와 좌표 매핑 데이터 로드
-const locations = JSON.parse(fs.readFileSync('locations.json', 'utf-8'));
+// 환경 변수에서 장소와 좌표 매핑 데이터 로드
+const locations = JSON.parse(process.env.LOCATIONS_JSON);
 
 // 날짜와 시간을 자동으로 계산하는 함수 (이전 시간대 내림 처리)
 const getCurrentDateTime = () => {
