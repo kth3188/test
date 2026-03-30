@@ -53,6 +53,7 @@ function extractFromStructured(markdownContent) {
       ...a,
     })),
     openQuestions: parsed.openQuestions,
+    sources: parsed.sources,
     tags: parsed.frontmatter.tags,
     frontmatter: parsed.frontmatter,
     rawContent: markdownContent,

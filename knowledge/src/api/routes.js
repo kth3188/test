@@ -65,42 +65,99 @@ router.post('/notes', async (req, res) => {
 
 // 노트 수정
 router.put('/notes/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  const note = queries.getNote(id);
-  if (!note) return res.status(404).json({ error: '노트를 찾을 수 없습니다.' });
+  try {
+    const id = parseInt(req.params.id);
+    const note = queries.getNote(id);
+    if (!note) return res.status(404).json({ error: '노트를 찾을 수 없습니다.' });
 
-  const { content, title, domain, confidence } = req.body;
+    const { content, title, domain, confidence } = req.body;
 
-  // 마크다운 내용이 변경되면 재파싱
-  if (content && content !== note.content) {
-    // 기존 관계/속성 삭제 후 재추출
-    queries.deleteRelationsByNote(id);
-    queries.deleteAttributesByNote(id);
+    if (content && content !== note.content) {
+      // 마크다운 변경 시: 기존 데이터 삭제 후 재추출
+      const db = require('../db/db').getDb();
+      db.transaction(() => {
+        queries.deleteRelationsByNote(id);
+        queries.deleteAttributesByNote(id);
+        queries.deleteSourcesByNote(id);
+        queries.deleteQuestionsByNote(id);
 
-    const extraction = extractFromStructured(content);
-    queries.updateNote(id, {
-      title: extraction.frontmatter.title,
-      domain: extraction.frontmatter.domain,
-      content,
-      confidence: extraction.frontmatter.confidence,
-    });
+        const extraction = extractFromStructured(content);
 
-    // 태그 업데이트
-    if (extraction.tags.length > 0) {
-      queries.setNoteTags(id, extraction.tags);
+        // 노트 메타 업데이트
+        queries.updateNote(id, {
+          title: extraction.frontmatter.title,
+          domain: extraction.frontmatter.domain,
+          content,
+          confidence: extraction.frontmatter.confidence,
+        });
+
+        // 태그 업데이트
+        if (extraction.tags.length > 0) {
+          queries.setNoteTags(id, extraction.tags);
+        }
+
+        // 엔티티 저장
+        const entityIds = {};
+        for (const entity of extraction.entities) {
+          queries.createEntity(entity.name, entity.type, entity.description);
+          const record = queries.getEntityByName(entity.name);
+          entityIds[entity.name] = record.id;
+        }
+
+        // 관계 저장
+        for (const rel of extraction.relations) {
+          const subId = entityIds[rel.subject];
+          const objId = entityIds[rel.object];
+          if (subId && objId) {
+            queries.createRelation(subId, rel.predicate, objId, id, rel.confidence);
+          }
+        }
+
+        // 속성 저장
+        for (const attr of extraction.attributes) {
+          const entId = entityIds[attr.entityName];
+          if (entId) {
+            queries.createAttribute(entId, attr.key, attr.value, id);
+          }
+        }
+
+        // 출처 저장
+        const mainEntityId = entityIds[extraction.frontmatter.title] || null;
+        if (extraction.sources) {
+          for (const source of extraction.sources) {
+            queries.createSource(source, mainEntityId, id);
+          }
+        }
+
+        // 미해결 질문 저장
+        for (const question of extraction.openQuestions) {
+          queries.createQuestion(question, mainEntityId, id);
+        }
+      })();
+
+      res.json({ success: true });
+    } else {
+      queries.updateNote(id, { title, domain, confidence });
+      res.json({ success: true });
     }
-  } else {
-    queries.updateNote(id, { title, domain, confidence });
+  } catch (err) {
+    console.error('노트 수정 오류:', err);
+    res.status(500).json({ error: err.message });
   }
-
-  res.json({ success: true });
 });
 
 // 노트 삭제
 router.delete('/notes/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  queries.deleteNote(id);
-  res.json({ success: true });
+  try {
+    const id = parseInt(req.params.id);
+    const note = queries.getNote(id);
+    if (!note) return res.status(404).json({ error: '노트를 찾을 수 없습니다.' });
+    queries.deleteNote(id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('노트 삭제 오류:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // 노트 재파싱 (마크다운 → DB 갱신)
@@ -160,8 +217,10 @@ router.post('/notes/:id/regenerate', (req, res) => {
   const attributes = queries.getAttributesForEntity(mainEntity.id);
   const questionList = queries.listQuestions({ status: 'open' })
     .filter(q => q.related_entity_id === mainEntity.id || q.source_note_id === id);
+  const tags = queries.getNoteTags(id);
+  const sources = queries.getSourcesForNote(id);
 
-  const markdown = regenerateNoteMarkdown(note, [mainEntity], relations, attributes, questionList);
+  const markdown = regenerateNoteMarkdown(note, [mainEntity], relations, attributes, questionList, tags, sources);
 
   // DB 업데이트
   queries.updateNote(id, { content: markdown });
@@ -187,15 +246,24 @@ router.get('/entities/:id', (req, res) => {
 
   const relations = queries.getRelationsForEntity(entity.id);
   const attributes = queries.getAttributesForEntity(entity.id);
+  const claims = queries.getEntityClaims(entity.id);
+  const conflicts = queries.getConflictingClaims(entity.id);
 
-  res.json({ ...entity, relations, attributes });
+  res.json({ ...entity, relations, attributes, claims, conflicts });
 });
 
 router.put('/entities/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  const { name, type, description } = req.body;
-  queries.updateEntity(id, { name, type, description });
-  res.json({ success: true });
+  try {
+    const id = parseInt(req.params.id);
+    const entity = queries.getEntity(id);
+    if (!entity) return res.status(404).json({ error: '엔티티를 찾을 수 없습니다.' });
+    const { name, type, description } = req.body;
+    queries.updateEntity(id, { name, type, description });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('엔티티 수정 오류:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // 엔티티를 마크다운 노트로 변환
@@ -207,6 +275,7 @@ router.get('/entities/:id/markdown', (req, res) => {
   const attributes = queries.getAttributesForEntity(entity.id);
   const questions = queries.listQuestions({ status: 'open' })
     .filter(q => q.related_entity_id === entity.id);
+  const sources = queries.getSourcesForEntity(entity.id);
 
   const relForMd = relations.map(r => ({
     targetName: r.subject_id === entity.id ? r.object_name : r.subject_name,
@@ -220,7 +289,7 @@ router.get('/entities/:id/markdown', (req, res) => {
     description: entity.description,
     relations: relForMd,
     attributes: attributes.map(a => ({ key: a.key, value: a.value })),
-    sources: [],
+    sources: sources.map(s => s.text),
     openQuestions: questions.map(q => q.question),
   }, { domain: entity.type });
 
@@ -325,6 +394,54 @@ router.post('/export/markdown', (req, res) => {
 router.get('/stats', (req, res) => {
   const stats = queries.getStats();
   res.json(stats);
+});
+
+// ==================== 모순 관리 API ====================
+
+// 엔티티의 모든 주장 조회
+router.get('/entities/:id/claims', (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const claims = queries.getEntityClaims(id);
+    const conflicts = queries.getConflictingClaims(id);
+    res.json({ claims, conflicts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 주장 해결 (verified/rejected/active)
+router.post('/claims/:id/resolve', (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['active', 'verified', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: '유효한 상태: active, verified, rejected' });
+    }
+    queries.resolveEntityClaim(parseInt(req.params.id), status);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 전체 모순 목록 (모든 엔티티)
+router.get('/conflicts', (req, res) => {
+  try {
+    const db = require('../db/db').getDb();
+    const conflicts = db.prepare(`
+      SELECT e.id as entity_id, e.name as entity_name, ec.field,
+             COUNT(DISTINCT ec.value) as claim_count
+      FROM entity_claims ec
+      JOIN entities e ON ec.entity_id = e.id
+      WHERE ec.status = 'active'
+      GROUP BY ec.entity_id, ec.field
+      HAVING claim_count > 1
+      ORDER BY claim_count DESC
+    `).all();
+    res.json({ conflicts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ==================== 조직 동기화 API ====================

@@ -14,12 +14,6 @@ const PORT = process.env.KNOWLEDGE_PORT || 3001;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// 일관된 에러 응답 형식
-app.use((err, req, res, next) => {
-  console.error('서버 오류:', err);
-  res.status(500).json({ success: false, error: err.message });
-});
-
 // 정적 파일 (프론트엔드)
 app.use(express.static(path.join(__dirname, '../frontend')));
 
@@ -30,6 +24,12 @@ app.use('/api', apiRoutes);
 // SPA 폴백 - 프론트엔드 index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/index.html'));
+});
+
+// 일관된 에러 응답 형식
+app.use((err, req, res, next) => {
+  console.error('서버 오류:', err);
+  res.status(500).json({ success: false, error: err.message });
 });
 
 // 정상 종료 처리

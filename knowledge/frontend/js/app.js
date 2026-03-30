@@ -9,6 +9,20 @@ const API = '/api';
 document.addEventListener('DOMContentLoaded', () => {
   loadNoteList();
   loadStats();
+
+  // 자동 저장 (30초마다)
+  const editor = document.getElementById('markdown-editor');
+  if (editor) {
+    let autoSaveTimer = null;
+    editor.addEventListener('input', () => {
+      clearTimeout(autoSaveTimer);
+      autoSaveTimer = setTimeout(() => {
+        if (currentNoteId && editor.value.trim()) {
+          saveCurrentNote();
+        }
+      }, 30000);
+    });
+  }
 });
 
 // 키보드 단축키
@@ -21,20 +35,6 @@ document.addEventListener('keydown', (e) => {
     document.getElementById('search-input').blur();
   }
 });
-
-// 자동 저장 (30초마다)
-let autoSaveTimer = null;
-const editor = document.getElementById('markdown-editor');
-if (editor) {
-  editor.addEventListener('input', () => {
-    clearTimeout(autoSaveTimer);
-    autoSaveTimer = setTimeout(() => {
-      if (currentNoteId && editor.value.trim()) {
-        saveCurrentNote();
-      }
-    }, 30000);
-  });
-}
 
 // ==================== API 호출 헬퍼 ====================
 async function api(path, options = {}) {
@@ -225,14 +225,8 @@ function renderMarkdown(md) {
   if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
     return DOMPurify.sanitize(marked.parse(text));
   }
-  // 폴백: 모든 HTML 이스케이프 후 기본 변환
-  return escHtml(text)
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/\n\n/g, '<br><br>');
+  // 폴백: 줄바꿈만 처리 (XSS 방어를 위해 전체 이스케이프)
+  return '<pre style="white-space:pre-wrap;font-family:inherit;">' + escHtml(text) + '</pre>';
 }
 
 // ==================== 그래프 시각화 ====================
@@ -242,6 +236,12 @@ async function loadGraph() {
     const data = await api('/graph');
 
     const container = document.getElementById('graph-container');
+
+    if (data.nodes.length === 0) {
+      container.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">엔티티가 없습니다. 노트를 추가하여 그래프를 생성하세요.</div>';
+      setStatus('그래프 데이터 없음');
+      return;
+    }
 
     // vis.js 데이터 변환
     const nodes = new vis.DataSet(data.nodes.map(n => ({
@@ -547,12 +547,9 @@ async function doSearch() {
 // ==================== 통계 ====================
 async function loadStats() {
   try {
-    const [notesData, entitiesData] = await Promise.all([
-      api('/notes'),
-      api('/entities'),
-    ]);
+    const stats = await api('/stats');
     document.getElementById('stats-text').textContent =
-      `노트: ${notesData.notes.length} | 엔티티: ${entitiesData.entities.length}`;
+      `노트: ${stats.noteCount} | 엔티티: ${stats.entityCount} | 관계: ${stats.relationCount} | 질문: ${stats.questionCount}`;
   } catch {
     // 무시
   }

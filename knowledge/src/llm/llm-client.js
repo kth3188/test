@@ -35,7 +35,10 @@ async function chat(systemPrompt, userMessage, options = {}) {
     model = 'claude-sonnet-4-6',
     maxTokens = 4096,
     temperature = 0.3,
+    _retryCount = 0,
   } = options;
+
+  const MAX_RETRIES = 3;
 
   try {
     const response = await client.messages.create({
@@ -54,10 +57,11 @@ async function chat(systemPrompt, userMessage, options = {}) {
     const textBlock = response.content.find(c => c.type === 'text');
     return textBlock ? textBlock.text : null;
   } catch (err) {
-    if (err.status === 429) {
-      console.warn('LLM API 속도 제한. 10초 후 재시도...');
-      await new Promise(r => setTimeout(r, 10000));
-      return chat(systemPrompt, userMessage, options);
+    if (err.status === 429 && _retryCount < MAX_RETRIES) {
+      const delay = Math.pow(2, _retryCount + 1) * 1000; // 2s, 4s, 8s
+      console.warn(`LLM API 속도 제한. ${delay/1000}초 후 재시도 (${_retryCount + 1}/${MAX_RETRIES})...`);
+      await new Promise(r => setTimeout(r, delay));
+      return chat(systemPrompt, userMessage, { ...options, _retryCount: _retryCount + 1 });
     }
     console.error('LLM API 호출 실패:', err.message);
     return null;

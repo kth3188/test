@@ -64,6 +64,27 @@ CREATE TABLE IF NOT EXISTS open_questions (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 출처/근거
+CREATE TABLE IF NOT EXISTS sources (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  text TEXT NOT NULL,
+  entity_id INTEGER REFERENCES entities(id) ON DELETE SET NULL,
+  source_note_id INTEGER REFERENCES notes(id) ON DELETE CASCADE,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 엔티티 주장 (모순 병렬 보존: 같은 엔티티에 대한 다른 주장을 출처별 보존)
+CREATE TABLE IF NOT EXISTS entity_claims (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+  field TEXT NOT NULL,
+  value TEXT NOT NULL,
+  source_note_id INTEGER REFERENCES notes(id) ON DELETE SET NULL,
+  confidence REAL DEFAULT 0.5,
+  status TEXT DEFAULT 'active',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 인덱스
 CREATE INDEX IF NOT EXISTS idx_relations_subject ON relations(subject_id);
 CREATE INDEX IF NOT EXISTS idx_relations_object ON relations(object_id);
@@ -71,6 +92,10 @@ CREATE INDEX IF NOT EXISTS idx_relations_note ON relations(source_note_id);
 CREATE INDEX IF NOT EXISTS idx_attributes_entity ON attributes(entity_id);
 CREATE INDEX IF NOT EXISTS idx_open_questions_status ON open_questions(status);
 CREATE INDEX IF NOT EXISTS idx_notes_domain ON notes(domain);
+CREATE INDEX IF NOT EXISTS idx_sources_note ON sources(source_note_id);
+CREATE INDEX IF NOT EXISTS idx_sources_entity ON sources(entity_id);
+CREATE INDEX IF NOT EXISTS idx_entity_claims_entity ON entity_claims(entity_id);
+CREATE INDEX IF NOT EXISTS idx_entity_claims_status ON entity_claims(status);
 
 -- FTS5 전문검색 (한국어 포함)
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(

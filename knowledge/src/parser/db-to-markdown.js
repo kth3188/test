@@ -110,7 +110,7 @@ function entityToMarkdown(entityData, options = {}) {
  * @param {object[]} questions - 미해결 질문 목록
  * @returns {string} 재생성된 마크다운
  */
-function regenerateNoteMarkdown(noteRecord, entities, relations, attributes, questions) {
+function regenerateNoteMarkdown(noteRecord, entities, relations, attributes, questions, tags, sources) {
   const mainEntity = entities.find(e => e.name === noteRecord.title) || {
     name: noteRecord.title,
     description: '',
@@ -135,6 +135,8 @@ function regenerateNoteMarkdown(noteRecord, entities, relations, attributes, que
     .filter(q => q.status === 'open')
     .map(q => q.question);
 
+  const sourceTexts = (sources || []).map(s => s.text || s);
+
   return entityToMarkdown(
     {
       name: mainEntity.name,
@@ -142,12 +144,12 @@ function regenerateNoteMarkdown(noteRecord, entities, relations, attributes, que
       description: mainEntity.description,
       relations: relatedEntities,
       attributes: attrs,
-      sources: [],
+      sources: sourceTexts,
       openQuestions,
     },
     {
       domain: noteRecord.domain,
-      tags: noteRecord._tags || [],
+      tags: tags || [],
       confidence: noteRecord.confidence,
     }
   );

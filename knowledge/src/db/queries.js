@@ -214,6 +214,80 @@ function dismissQuestion(id) {
   ).run(id);
 }
 
+// ==================== 출처 ====================
+
+function createSource(text, entityId = null, sourceNoteId = null) {
+  const db = getDb();
+  return db.prepare(
+    'INSERT INTO sources (text, entity_id, source_note_id) VALUES (?, ?, ?)'
+  ).run(text, entityId, sourceNoteId);
+}
+
+function getSourcesForEntity(entityId) {
+  const db = getDb();
+  return db.prepare('SELECT * FROM sources WHERE entity_id = ?').all(entityId);
+}
+
+function getSourcesForNote(noteId) {
+  const db = getDb();
+  return db.prepare('SELECT * FROM sources WHERE source_note_id = ?').all(noteId);
+}
+
+function deleteSourcesByNote(noteId) {
+  const db = getDb();
+  return db.prepare('DELETE FROM sources WHERE source_note_id = ?').run(noteId);
+}
+
+function deleteQuestionsByNote(noteId) {
+  const db = getDb();
+  return db.prepare('DELETE FROM open_questions WHERE source_note_id = ?').run(noteId);
+}
+
+// ==================== 모순 병렬 보존 ====================
+
+function addEntityClaim(entityId, field, value, sourceNoteId = null, confidence = 0.5) {
+  const db = getDb();
+  // 동일 주장이 이미 있으면 건너뜀
+  const existing = db.prepare(
+    'SELECT id FROM entity_claims WHERE entity_id = ? AND field = ? AND value = ?'
+  ).get(entityId, field, value);
+  if (existing) return existing;
+
+  return db.prepare(
+    'INSERT INTO entity_claims (entity_id, field, value, source_note_id, confidence) VALUES (?, ?, ?, ?, ?)'
+  ).run(entityId, field, value, sourceNoteId, confidence);
+}
+
+function getEntityClaims(entityId) {
+  const db = getDb();
+  return db.prepare(`
+    SELECT ec.*, n.title as source_note_title
+    FROM entity_claims ec
+    LEFT JOIN notes n ON ec.source_note_id = n.id
+    WHERE ec.entity_id = ? AND ec.status = 'active'
+    ORDER BY ec.field, ec.confidence DESC
+  `).all(entityId);
+}
+
+function getConflictingClaims(entityId) {
+  const db = getDb();
+  // 같은 필드에 다른 값을 가진 주장이 2개 이상인 경우
+  return db.prepare(`
+    SELECT ec.field, COUNT(DISTINCT ec.value) as claim_count
+    FROM entity_claims ec
+    WHERE ec.entity_id = ? AND ec.status = 'active'
+    GROUP BY ec.field
+    HAVING claim_count > 1
+  `).all(entityId);
+}
+
+function resolveEntityClaim(claimId, status) {
+  const db = getDb();
+  return db.prepare(
+    'UPDATE entity_claims SET status = ? WHERE id = ?'
+  ).run(status, claimId);
+}
+
 // ==================== 검색 ====================
 
 function searchNotes(query, limit = 20) {
@@ -299,6 +373,12 @@ function saveNoteWithExtraction(extractionResult, markdownContent) {
       const result = createEntity(entity.name, entity.type, entity.description);
       const entityRecord = getEntityByName(entity.name);
       entityIds[entity.name] = entityRecord.id;
+
+      // 엔티티 설명을 주장(claim)으로 저장 (모순 병렬 보존)
+      if (entity.description) {
+        const conf = { high: 0.9, medium: 0.6, low: 0.3 }[frontmatter.confidence] || 0.5;
+        addEntityClaim(entityIds[entity.name], 'description', entity.description, noteId, conf);
+      }
     }
 
     // 4. 관계 저장
@@ -322,6 +402,13 @@ function saveNoteWithExtraction(extractionResult, markdownContent) {
     const mainEntityId = entityIds[frontmatter.title] || null;
     for (const question of openQuestions) {
       createQuestion(question, mainEntityId, noteId);
+    }
+
+    // 7. 출처 저장
+    if (extractionResult.sources && extractionResult.sources.length > 0) {
+      for (const source of extractionResult.sources) {
+        createSource(source, mainEntityId, noteId);
+      }
     }
 
     return { noteId, entityCount: entities.length, relationCount: relations.length };
@@ -353,7 +440,11 @@ module.exports = {
   // 태그
   getOrCreateTag, setNoteTags, getNoteTags,
   // 질문
-  createQuestion, listQuestions, answerQuestion, dismissQuestion,
+  createQuestion, listQuestions, answerQuestion, dismissQuestion, deleteQuestionsByNote,
+  // 출처
+  createSource, getSourcesForEntity, getSourcesForNote, deleteSourcesByNote,
+  // 모순 병렬 보존
+  addEntityClaim, getEntityClaims, getConflictingClaims, resolveEntityClaim,
   // 검색
   searchNotes, searchEntities,
   // 그래프
