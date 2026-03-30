@@ -3,14 +3,24 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "knowledge": "node knowledge/src/server.js",
+    "init-db": "node knowledge/src/db/init.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "axios": "^1.7.7",
-    "express": "^4.21.1"
+    "better-sqlite3": "^11.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "gray-matter": "^4.0.3",
+    "remark": "^15.0.0",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.0",
+    "unist-util-visit": "^5.0.0"
   }
 }
