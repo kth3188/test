@@ -35,13 +35,21 @@ function entityToMarkdown(entityData, options = {}) {
 
   const today = new Date().toISOString().split('T')[0];
 
-  // YAML frontmatter
+  // YAML 값 이스케이프 (콜론, 따옴표 등 특수문자 처리)
+  const yamlEscape = (str) => {
+    if (!str) return '';
+    if (/[:#\[\]{}&*!|>'"`,@]/.test(str) || str.includes('\n')) {
+      return `"${str.replace(/"/g, '\\"')}"`;
+    }
+    return str;
+  };
+
   const frontmatter = [
     '---',
-    `title: ${name}`,
-    `domain: ${domain}`,
+    `title: ${yamlEscape(name)}`,
+    `domain: ${yamlEscape(domain)}`,
     `created: ${today}`,
-    `tags: [${tags.join(', ')}]`,
+    `tags: [${tags.map(t => yamlEscape(t)).join(', ')}]`,
     `confidence: ${confidence}`,
     '---',
   ].join('\n');
@@ -103,26 +111,26 @@ function entityToMarkdown(entityData, options = {}) {
  * @returns {string} 재생성된 마크다운
  */
 function regenerateNoteMarkdown(noteRecord, entities, relations, attributes, questions) {
-  // 주 엔티티 찾기 (노트 제목과 일치하는 엔티티)
   const mainEntity = entities.find(e => e.name === noteRecord.title) || {
     name: noteRecord.title,
     description: '',
   };
 
-  // 관계를 관련 개체 형태로 변환
-  const relatedEntities = relations.map(r => ({
-    targetName: r.subject_name === mainEntity.name ? r.object_name : r.subject_name,
-    predicate: r.predicate,
-    description: '',
-  }));
+  // 관계를 관련 개체 형태로 변환 (방향성 보존)
+  const relatedEntities = relations.map(r => {
+    const isSubject = r.subject_name === mainEntity.name;
+    return {
+      targetName: isSubject ? r.object_name : r.subject_name,
+      predicate: r.predicate,
+      description: '',
+    };
+  });
 
-  // 속성 변환
   const attrs = attributes.map(a => ({
     key: a.key,
     value: a.value,
   }));
 
-  // 질문 변환
   const openQuestions = questions
     .filter(q => q.status === 'open')
     .map(q => q.question);
@@ -139,7 +147,7 @@ function regenerateNoteMarkdown(noteRecord, entities, relations, attributes, que
     },
     {
       domain: noteRecord.domain,
-      tags: [],
+      tags: noteRecord._tags || [],
       confidence: noteRecord.confidence,
     }
   );

@@ -35,8 +35,18 @@ function extractFromStructured(markdownContent) {
     });
   }
 
+  // 엔티티 중복 제거
+  const uniqueEntities = [];
+  const seen = new Set();
+  for (const entity of entities) {
+    if (entity.name && entity.name.trim() && !seen.has(entity.name)) {
+      seen.add(entity.name);
+      uniqueEntities.push(entity);
+    }
+  }
+
   return {
-    entities,
+    entities: uniqueEntities,
     relations,
     attributes: parsed.attributes.map(a => ({
       entityName: mainEntity.name,
@@ -61,8 +71,8 @@ function confidenceToNumber(confidence) {
  * 숫자 신뢰도를 문자열로 변환
  */
 function confidenceToString(num) {
-  if (num >= 0.7) return 'high';
-  if (num >= 0.4) return 'medium';
+  if (num >= 0.75) return 'high';
+  if (num >= 0.45) return 'medium';
   return 'low';
 }
 

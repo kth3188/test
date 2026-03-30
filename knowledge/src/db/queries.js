@@ -29,13 +29,14 @@ function listNotes({ domain, limit = 50, offset = 0 } = {}) {
 
 function updateNote(id, { title, domain, content, confidence }) {
   const db = getDb();
+  const ALLOWED = { title: 'title', domain: 'domain', content: 'content', confidence: 'confidence' };
   const fields = [];
   const values = [];
 
-  if (title !== undefined) { fields.push('title = ?'); values.push(title); }
-  if (domain !== undefined) { fields.push('domain = ?'); values.push(domain); }
-  if (content !== undefined) { fields.push('content = ?'); values.push(content); }
-  if (confidence !== undefined) { fields.push('confidence = ?'); values.push(confidence); }
+  for (const [key, col] of Object.entries(ALLOWED)) {
+    const val = arguments[1][key];
+    if (val !== undefined) { fields.push(`${col} = ?`); values.push(val); }
+  }
 
   if (fields.length === 0) return null;
 
@@ -88,12 +89,14 @@ function listEntities({ type, limit = 100, offset = 0 } = {}) {
 
 function updateEntity(id, { name, type, description }) {
   const db = getDb();
+  const ALLOWED = { name: 'name', type: 'type', description: 'description' };
   const fields = [];
   const values = [];
 
-  if (name !== undefined) { fields.push('name = ?'); values.push(name); }
-  if (type !== undefined) { fields.push('type = ?'); values.push(type); }
-  if (description !== undefined) { fields.push('description = ?'); values.push(description); }
+  for (const [key, col] of Object.entries(ALLOWED)) {
+    const val = arguments[1][key];
+    if (val !== undefined) { fields.push(`${col} = ?`); values.push(val); }
+  }
 
   if (fields.length === 0) return null;
   values.push(id);
@@ -215,28 +218,42 @@ function dismissQuestion(id) {
 
 function searchNotes(query, limit = 20) {
   const db = getDb();
-  return db.prepare(`
-    SELECT n.id, n.title, n.domain, n.confidence, n.created_at,
-           snippet(notes_fts, 1, '<mark>', '</mark>', '...', 64) as snippet
-    FROM notes_fts f
-    JOIN notes n ON f.rowid = n.id
-    WHERE notes_fts MATCH ?
-    ORDER BY rank
-    LIMIT ?
-  `).all(query, limit);
+  try {
+    return db.prepare(`
+      SELECT n.id, n.title, n.domain, n.confidence, n.created_at,
+             snippet(notes_fts, 1, '<mark>', '</mark>', '...', 64) as snippet
+      FROM notes_fts f
+      JOIN notes n ON f.rowid = n.id
+      WHERE notes_fts MATCH ?
+      ORDER BY rank
+      LIMIT ?
+    `).all(query, limit);
+  } catch (err) {
+    console.warn('FTS5 검색 오류 (LIKE 폴백):', err.message);
+    return db.prepare(
+      'SELECT id, title, domain, confidence, created_at FROM notes WHERE title LIKE ? OR content LIKE ? LIMIT ?'
+    ).all(`%${query}%`, `%${query}%`, limit);
+  }
 }
 
 function searchEntities(query, limit = 20) {
   const db = getDb();
-  return db.prepare(`
-    SELECT e.id, e.name, e.type, e.description,
-           snippet(entities_fts, 0, '<mark>', '</mark>', '...', 64) as snippet
-    FROM entities_fts f
-    JOIN entities e ON f.rowid = e.id
-    WHERE entities_fts MATCH ?
-    ORDER BY rank
-    LIMIT ?
-  `).all(query, limit);
+  try {
+    return db.prepare(`
+      SELECT e.id, e.name, e.type, e.description,
+             snippet(entities_fts, 0, '<mark>', '</mark>', '...', 64) as snippet
+      FROM entities_fts f
+      JOIN entities e ON f.rowid = e.id
+      WHERE entities_fts MATCH ?
+      ORDER BY rank
+      LIMIT ?
+    `).all(query, limit);
+  } catch (err) {
+    console.warn('FTS5 검색 오류 (LIKE 폴백):', err.message);
+    return db.prepare(
+      'SELECT id, name, type, description FROM entities WHERE name LIKE ? OR description LIKE ? LIMIT ?'
+    ).all(`%${query}%`, `%${query}%`, limit);
+  }
 }
 
 // ==================== 그래프 데이터 ====================
@@ -313,6 +330,17 @@ function saveNoteWithExtraction(extractionResult, markdownContent) {
   return transaction();
 }
 
+// ==================== 통계 ====================
+
+function getStats() {
+  const db = getDb();
+  const noteCount = db.prepare('SELECT COUNT(*) as count FROM notes').get().count;
+  const entityCount = db.prepare('SELECT COUNT(*) as count FROM entities').get().count;
+  const relationCount = db.prepare('SELECT COUNT(*) as count FROM relations').get().count;
+  const questionCount = db.prepare('SELECT COUNT(*) as count FROM open_questions WHERE status = ?').get('open').count;
+  return { noteCount, entityCount, relationCount, questionCount };
+}
+
 module.exports = {
   // 노트
   createNote, getNote, listNotes, updateNote, deleteNote,
@@ -332,4 +360,6 @@ module.exports = {
   getGraphData,
   // 통합
   saveNoteWithExtraction,
+  // 통계
+  getStats,
 };

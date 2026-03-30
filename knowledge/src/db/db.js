@@ -21,6 +21,7 @@ function getDb(dbPath = process.env.KNOWLEDGE_DB_PATH || DEFAULT_DB_PATH) {
   _db = new Database(dbPath);
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');
+  _db.pragma('busy_timeout = 5000');
 
   return _db;
 }
@@ -29,22 +30,15 @@ function getDb(dbPath = process.env.KNOWLEDGE_DB_PATH || DEFAULT_DB_PATH) {
  * DB 초기화 (스키마 적용)
  */
 function initDb(dbPath) {
-  // 싱글턴 리셋 (다른 경로의 DB 초기화를 위해)
   if (_db) { _db.close(); _db = null; }
 
   const db = getDb(dbPath);
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
 
-  // 전체 스키마를 한번에 실행 (트리거 내부 세미콜론 보존)
-  try {
-    db.exec(schema);
-  } catch (err) {
-    console.error(`스키마 실행 오류: ${err.message}`);
-  }
+  db.exec(schema);
 
   console.log('DB 초기화 완료:', dbPath);
 
-  // 싱글턴 리셋 (이후 기본 경로로 다시 연결되도록)
   _db.close();
   _db = null;
 

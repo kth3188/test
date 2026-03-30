@@ -12,8 +12,18 @@ const RELATION_TYPES = [
  * @returns {object} 파싱된 구조화 데이터
  */
 function parseMarkdown(markdownContent) {
-  // 1. YAML frontmatter 파싱
-  const { data: frontmatter, content } = matter(markdownContent);
+  // 1. YAML frontmatter 파싱 (오류 방어)
+  let frontmatter = {};
+  let content = markdownContent;
+  try {
+    const parsed = matter(markdownContent);
+    frontmatter = parsed.data || {};
+    content = parsed.content;
+  } catch (err) {
+    console.warn('YAML frontmatter 파싱 실패, 전체를 본문으로 처리:', err.message);
+    frontmatter = {};
+    content = markdownContent;
+  }
 
   // 2. 섹션별 분리
   const sections = parseSections(content);
@@ -38,7 +48,7 @@ function parseMarkdown(markdownContent) {
       title: frontmatter.title || '제목 없음',
       domain: frontmatter.domain || null,
       created: frontmatter.created || new Date().toISOString().split('T')[0],
-      tags: frontmatter.tags || [],
+      tags: Array.isArray(frontmatter.tags) ? frontmatter.tags : (frontmatter.tags ? [String(frontmatter.tags)] : []),
       confidence: frontmatter.confidence || 'medium',
     },
     definition,

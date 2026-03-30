@@ -21,58 +21,56 @@ function exportToOrganization(options = {}) {
   let exportedEntities = 0;
   let exportedRelations = 0;
 
-  const transaction = orgDb.transaction(() => {
-    // 1. 엔티티 내보내기
-    let entitiesQuery = 'SELECT * FROM entities';
-    const entities = personalDb.prepare(entitiesQuery).all();
+  try {
+    const transaction = orgDb.transaction(() => {
+      const entities = personalDb.prepare('SELECT * FROM entities').all();
 
-    for (const entity of entities) {
-      orgDb.prepare(`
-        INSERT INTO entities (name, type, description)
-        VALUES (?, ?, ?)
-        ON CONFLICT(name) DO UPDATE SET
-          type = COALESCE(excluded.type, entities.type),
-          description = CASE
-            WHEN length(excluded.description) > length(COALESCE(entities.description, ''))
-            THEN excluded.description
-            ELSE entities.description
-          END
-      `).run(entity.name, entity.type, entity.description);
-      exportedEntities++;
-    }
+      for (const entity of entities) {
+        orgDb.prepare(`
+          INSERT INTO entities (name, type, description)
+          VALUES (?, ?, ?)
+          ON CONFLICT(name) DO UPDATE SET
+            type = COALESCE(excluded.type, entities.type),
+            description = CASE
+              WHEN length(excluded.description) > length(COALESCE(entities.description, ''))
+              THEN excluded.description
+              ELSE entities.description
+            END
+        `).run(entity.name, entity.type, entity.description);
+        exportedEntities++;
+      }
 
-    // 2. 관계 내보내기 (신뢰도 필터)
-    const relations = personalDb.prepare(`
-      SELECT r.*, s.name as subject_name, o.name as object_name
-      FROM relations r
-      JOIN entities s ON r.subject_id = s.id
-      JOIN entities o ON r.object_id = o.id
-      WHERE r.confidence >= ?
-    `).all(minConfidence);
+      const relations = personalDb.prepare(`
+        SELECT r.*, s.name as subject_name, o.name as object_name
+        FROM relations r
+        JOIN entities s ON r.subject_id = s.id
+        JOIN entities o ON r.object_id = o.id
+        WHERE r.confidence >= ?
+      `).all(minConfidence);
 
-    for (const rel of relations) {
-      // 조직 DB에서 엔티티 ID 조회
-      const subj = orgDb.prepare('SELECT id FROM entities WHERE name = ?').get(rel.subject_name);
-      const obj = orgDb.prepare('SELECT id FROM entities WHERE name = ?').get(rel.object_name);
+      for (const rel of relations) {
+        const subj = orgDb.prepare('SELECT id FROM entities WHERE name = ?').get(rel.subject_name);
+        const obj = orgDb.prepare('SELECT id FROM entities WHERE name = ?').get(rel.object_name);
 
-      if (subj && obj) {
-        // 중복 관계 방지
-        const existing = orgDb.prepare(
-          'SELECT id FROM relations WHERE subject_id = ? AND predicate = ? AND object_id = ?'
-        ).get(subj.id, rel.predicate, obj.id);
+        if (subj && obj) {
+          const existing = orgDb.prepare(
+            'SELECT id FROM relations WHERE subject_id = ? AND predicate = ? AND object_id = ?'
+          ).get(subj.id, rel.predicate, obj.id);
 
-        if (!existing) {
-          orgDb.prepare(
-            'INSERT INTO relations (subject_id, predicate, object_id, confidence) VALUES (?, ?, ?, ?)'
-          ).run(subj.id, rel.predicate, obj.id, rel.confidence);
-          exportedRelations++;
+          if (!existing) {
+            orgDb.prepare(
+              'INSERT INTO relations (subject_id, predicate, object_id, confidence) VALUES (?, ?, ?, ?)'
+            ).run(subj.id, rel.predicate, obj.id, rel.confidence);
+            exportedRelations++;
+          }
         }
       }
-    }
-  });
+    });
 
-  transaction();
-  orgDb.close();
+    transaction();
+  } finally {
+    orgDb.close();
+  }
 
   return { exportedEntities, exportedRelations };
 }

@@ -37,14 +37,31 @@ async function chat(systemPrompt, userMessage, options = {}) {
     temperature = 0.3,
   } = options;
 
-  const response = await client.messages.create({
-    model,
-    max_tokens: maxTokens,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userMessage }],
-  });
+  try {
+    const response = await client.messages.create({
+      model,
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
+    });
 
-  return response.content[0].text;
+    // 응답 구조 검증
+    if (!response.content || !Array.isArray(response.content) || response.content.length === 0) {
+      console.error('LLM 응답 구조 이상:', JSON.stringify(response).slice(0, 200));
+      return null;
+    }
+
+    const textBlock = response.content.find(c => c.type === 'text');
+    return textBlock ? textBlock.text : null;
+  } catch (err) {
+    if (err.status === 429) {
+      console.warn('LLM API 속도 제한. 10초 후 재시도...');
+      await new Promise(r => setTimeout(r, 10000));
+      return chat(systemPrompt, userMessage, options);
+    }
+    console.error('LLM API 호출 실패:', err.message);
+    return null;
+  }
 }
 
 /**
@@ -54,17 +71,40 @@ async function chatJson(systemPrompt, userMessage, options = {}) {
   const text = await chat(systemPrompt, userMessage, options);
   if (!text) return null;
 
-  // JSON 블록 추출 (```json ... ``` 또는 순수 JSON)
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-  if (jsonMatch) {
+  // 1. JSON 코드블록에서 추출 시도
+  const codeBlockMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+  if (codeBlockMatch) {
     try {
-      return JSON.parse(jsonMatch[1]);
+      return JSON.parse(codeBlockMatch[1].trim());
     } catch (e) {
-      console.error('JSON 파싱 실패:', e.message);
-      return null;
+      console.error('JSON 코드블록 파싱 실패:', e.message, '원문:', codeBlockMatch[1].slice(0, 200));
     }
   }
-  return null;
+
+  // 2. 첫 번째 유효한 JSON 객체/배열 추출 (비탐욕적)
+  const jsonPatterns = [
+    /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/,  // 중첩 1단계 객체
+    /\[[\s\S]*?\]/,                       // 배열
+  ];
+
+  for (const pattern of jsonPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch (e) {
+        // 다음 패턴 시도
+      }
+    }
+  }
+
+  // 3. 전체 텍스트가 JSON인지 시도
+  try {
+    return JSON.parse(text.trim());
+  } catch (e) {
+    console.error('JSON 추출 실패. LLM 응답:', text.slice(0, 300));
+    return null;
+  }
 }
 
 module.exports = { getClient, chat, chatJson };

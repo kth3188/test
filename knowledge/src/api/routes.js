@@ -14,7 +14,7 @@ router.get('/notes', (req, res) => {
   const { domain, limit, offset } = req.query;
   const notes = queries.listNotes({
     domain: domain || undefined,
-    limit: parseInt(limit) || 50,
+    limit: Math.min(parseInt(limit) || 50, 500),
     offset: parseInt(offset) || 0,
   });
   res.json({ notes });
@@ -33,6 +33,8 @@ router.get('/notes/:id', (req, res) => {
 router.post('/notes', async (req, res) => {
   try {
     const { content } = req.body;
+    if (typeof content !== 'string') return res.status(400).json({ error: '내용은 문자열이어야 합니다.' });
+    if (content.length > 500000) return res.status(400).json({ error: '내용이 너무 깁니다 (최대 500KB).' });
     if (!content) return res.status(400).json({ error: '마크다운 내용이 필요합니다.' });
 
     // 1. 규칙 기반 추출
@@ -107,35 +109,39 @@ router.post('/notes/:id/reparse', (req, res) => {
   const note = queries.getNote(id);
   if (!note) return res.status(404).json({ error: '노트를 찾을 수 없습니다.' });
 
-  queries.deleteRelationsByNote(id);
-  queries.deleteAttributesByNote(id);
+  const db = require('../db/db').getDb();
+  const result = db.transaction(() => {
+    queries.deleteRelationsByNote(id);
+    queries.deleteAttributesByNote(id);
 
-  const extraction = extractFromStructured(note.content);
+    const extraction = extractFromStructured(note.content);
 
-  // 엔티티/관계/속성 재저장
-  const entityIds = {};
-  for (const entity of extraction.entities) {
-    queries.createEntity(entity.name, entity.type, entity.description);
-    const record = queries.getEntityByName(entity.name);
-    entityIds[entity.name] = record.id;
-  }
-
-  for (const rel of extraction.relations) {
-    const subId = entityIds[rel.subject];
-    const objId = entityIds[rel.object];
-    if (subId && objId) {
-      queries.createRelation(subId, rel.predicate, objId, id, rel.confidence);
+    const entityIds = {};
+    for (const entity of extraction.entities) {
+      queries.createEntity(entity.name, entity.type, entity.description);
+      const record = queries.getEntityByName(entity.name);
+      entityIds[entity.name] = record.id;
     }
-  }
 
-  for (const attr of extraction.attributes) {
-    const entId = entityIds[attr.entityName];
-    if (entId) {
-      queries.createAttribute(entId, attr.key, attr.value, id);
+    for (const rel of extraction.relations) {
+      const subId = entityIds[rel.subject];
+      const objId = entityIds[rel.object];
+      if (subId && objId) {
+        queries.createRelation(subId, rel.predicate, objId, id, rel.confidence);
+      }
     }
-  }
 
-  res.json({ success: true, entityCount: extraction.entities.length });
+    for (const attr of extraction.attributes) {
+      const entId = entityIds[attr.entityName];
+      if (entId) {
+        queries.createAttribute(entId, attr.key, attr.value, id);
+      }
+    }
+
+    return extraction.entities.length;
+  })();
+
+  res.json({ success: true, entityCount: result });
 });
 
 // 노트 마크다운 재생성 (DB → 마크다운)
@@ -169,7 +175,7 @@ router.get('/entities', (req, res) => {
   const { type, limit, offset } = req.query;
   const entities = queries.listEntities({
     type: type || undefined,
-    limit: parseInt(limit) || 100,
+    limit: Math.min(parseInt(limit) || 100, 500),
     offset: parseInt(offset) || 0,
   });
   res.json({ entities });
@@ -233,6 +239,7 @@ router.get('/graph', (req, res) => {
 router.get('/search', (req, res) => {
   const { q, limit } = req.query;
   if (!q) return res.status(400).json({ error: '검색어가 필요합니다.' });
+  if (q.length > 200) return res.status(400).json({ error: '검색어가 너무 깁니다.' });
 
   const notes = queries.searchNotes(q, parseInt(limit) || 20);
   const entities = queries.searchEntities(q, parseInt(limit) || 20);
@@ -311,6 +318,13 @@ router.post('/export/markdown', (req, res) => {
   }
 
   res.json({ markdowns });
+});
+
+// ==================== 통계 API ====================
+
+router.get('/stats', (req, res) => {
+  const stats = queries.getStats();
+  res.json(stats);
 });
 
 // ==================== 조직 동기화 API ====================

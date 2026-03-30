@@ -80,14 +80,28 @@ function importFromOrganization(options = {}) {
         confidence: 'medium',
       });
 
-      // 개인 DB에 저장
-      const extraction = extractFromStructured(markdown);
-      const saved = queries.saveNoteWithExtraction(extraction, markdown);
+      // DB 저장 먼저 (실패 시 파일 생성하지 않음)
+      let saved;
+      try {
+        const extraction = extractFromStructured(markdown);
+        saved = queries.saveNoteWithExtraction(extraction, markdown);
+      } catch (err) {
+        console.error(`엔티티 "${entity.name}" DB 저장 실패:`, err.message);
+        continue;
+      }
 
-      // 마크다운 파일로도 저장
+      // DB 저장 성공 후 파일 생성
+      const notesDir = path.join(__dirname, '../../notes');
+      if (!fs.existsSync(notesDir)) {
+        fs.mkdirSync(notesDir, { recursive: true });
+      }
       const fileName = entity.name.replace(/[/\\?%*:|"<>]/g, '_');
-      const filePath = path.join(__dirname, '../../notes', `${fileName}.md`);
-      fs.writeFileSync(filePath, markdown, 'utf-8');
+      const filePath = path.join(notesDir, `${fileName}.md`);
+      try {
+        fs.writeFileSync(filePath, markdown, 'utf-8');
+      } catch (err) {
+        console.warn(`파일 저장 실패 (DB에는 저장됨):`, err.message);
+      }
 
       results.push({
         entityName: entity.name,

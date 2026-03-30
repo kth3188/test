@@ -11,6 +11,31 @@ document.addEventListener('DOMContentLoaded', () => {
   loadStats();
 });
 
+// 키보드 단축키
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    if (currentView === 'notes') saveCurrentNote();
+  }
+  if (e.key === 'Escape') {
+    document.getElementById('search-input').blur();
+  }
+});
+
+// 자동 저장 (30초마다)
+let autoSaveTimer = null;
+const editor = document.getElementById('markdown-editor');
+if (editor) {
+  editor.addEventListener('input', () => {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(() => {
+      if (currentNoteId && editor.value.trim()) {
+        saveCurrentNote();
+      }
+    }, 30000);
+  });
+}
+
 // ==================== API 호출 헬퍼 ====================
 async function api(path, options = {}) {
   const { method = 'GET', body } = options;
@@ -65,8 +90,8 @@ async function loadNoteList() {
       el.innerHTML = `
         <div class="text-sm font-medium truncate">${escHtml(note.title)}</div>
         <div class="text-xs text-gray-500 flex gap-2 mt-1">
-          <span>${note.domain || '미분류'}</span>
-          <span class="badge-${note.confidence} px-1 rounded text-xs">${note.confidence}</span>
+          <span>${escHtml(note.domain || '미분류')}</span>
+          <span class="badge-${escHtml(note.confidence)} px-1 rounded text-xs">${escHtml(note.confidence)}</span>
         </div>
       `;
       el.onclick = () => loadNote(note.id);
@@ -131,15 +156,16 @@ async function saveCurrentNote() {
     return;
   }
 
+  const saveBtn = document.querySelector('[onclick="saveCurrentNote()"]');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '저장 중...'; }
+
   try {
     setStatus('저장 중...');
 
     if (currentNoteId) {
-      // 기존 노트 수정
       await api(`/notes/${currentNoteId}`, { method: 'PUT', body: { content } });
       setStatus('노트 수정 완료');
     } else {
-      // 새 노트 생성
       const result = await api('/notes', { method: 'POST', body: { content } });
       currentNoteId = result.noteId;
       setStatus(`노트 저장 완료 (엔티티 ${result.entityCount}개, 관계 ${result.relationCount}개 추출)`);
@@ -149,6 +175,8 @@ async function saveCurrentNote() {
     loadStats();
   } catch (err) {
     setStatus('저장 실패: ' + err.message);
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '저장'; }
   }
 }
 
@@ -190,22 +218,21 @@ function setEditorMode(mode) {
   }
 }
 
-// 간단한 마크다운 렌더러
 function renderMarkdown(md) {
   // frontmatter 제거
-  let text = md.replace(/^---[\s\S]*?---\n*/m, '');
-
-  return text
+  const text = md.replace(/^---[\s\S]*?---\n*/m, '');
+  // marked.js로 렌더링 후 DOMPurify로 XSS 방어
+  if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+    return DOMPurify.sanitize(marked.parse(text));
+  }
+  // 폴백: 모든 HTML 이스케이프 후 기본 변환
+  return escHtml(text)
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm, '<h2>$1</h2>')
     .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*\[([^\]]+)\]\*\*/g, '<strong style="color:#fbbf24">[$1]</strong>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/^(?!<[hul])/gm, '<p>')
-    .replace(/<p><\/p>/g, '');
+    .replace(/\n\n/g, '<br><br>');
 }
 
 // ==================== 그래프 시각화 ====================
@@ -302,7 +329,7 @@ async function loadEntities() {
         <div class="flex justify-between items-start">
           <div>
             <span class="font-medium text-blue-400">${escHtml(entity.name)}</span>
-            <span class="text-xs text-gray-500 ml-2">${entity.type || '미분류'}</span>
+            <span class="text-xs text-gray-500 ml-2">${escHtml(entity.type || '미분류')}</span>
           </div>
           <button onclick="event.stopPropagation(); exportEntityMarkdown(${entity.id})"
                   class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">MD 변환</button>
@@ -327,7 +354,7 @@ async function showEntityDetail(id) {
     let html = `
       <div class="entity-card border-blue-500">
         <h3 class="text-lg font-bold text-blue-400">${escHtml(entity.name)}</h3>
-        <div class="text-sm text-gray-400 mt-1">유형: ${entity.type || '미분류'}</div>
+        <div class="text-sm text-gray-400 mt-1">유형: ${escHtml(entity.type || '미분류')}</div>
         <div class="text-sm mt-2">${escHtml(entity.description || '설명 없음')}</div>
 
         <h4 class="text-sm font-semibold text-gray-300 mt-4 mb-2">관계</h4>
@@ -403,7 +430,7 @@ async function loadQuestions() {
         <div class="text-sm">${escHtml(q.question)}</div>
         <div class="text-xs text-gray-500 mt-1">
           ${q.entity_name ? `관련: ${escHtml(q.entity_name)}` : ''}
-          <span class="ml-2">${q.created_at}</span>
+          <span class="ml-2">${escHtml(q.created_at)}</span>
         </div>
         <div class="mt-2 flex gap-2">
           <input type="text" placeholder="답변 입력..."
@@ -481,7 +508,7 @@ async function doSearch() {
         el.className = 'note-item';
         el.innerHTML = `
           <div class="text-sm font-medium truncate">${escHtml(note.title)}</div>
-          <div class="text-xs text-gray-500">${note.snippet || ''}</div>
+          <div class="text-xs text-gray-500">${escHtml(note.snippet || '')}</div>
         `;
         el.onclick = () => loadNote(note.id);
         list.appendChild(el);
@@ -520,13 +547,12 @@ async function doSearch() {
 // ==================== 통계 ====================
 async function loadStats() {
   try {
-    const [notes, entities] = await Promise.all([
-      api('/notes?limit=1'),
-      api('/entities?limit=1'),
+    const [notesData, entitiesData] = await Promise.all([
+      api('/notes'),
+      api('/entities'),
     ]);
-    // 간이 통계 (목록 길이로 추정)
     document.getElementById('stats-text').textContent =
-      `노트: ${notes.notes.length}+ | 엔티티: ${entities.entities.length}+`;
+      `노트: ${notesData.notes.length} | 엔티티: ${entitiesData.entities.length}`;
   } catch {
     // 무시
   }
