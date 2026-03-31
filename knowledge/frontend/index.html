@@ -9,40 +9,74 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/dist/vis-network.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.js"></script>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="bg-gray-900 text-gray-100 h-screen flex flex-col">
 
   <!-- 헤더 -->
-  <header class="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between shrink-0">
-    <h1 class="text-lg font-bold text-blue-400">🧠 온톨로지 지식 시스템</h1>
-    <div class="flex gap-2">
-      <button onclick="showView('notes')" id="btn-notes" class="nav-btn active px-3 py-1 rounded text-sm">노트</button>
-      <button onclick="showView('graph')" id="btn-graph" class="nav-btn px-3 py-1 rounded text-sm">그래프</button>
-      <button onclick="showView('entities')" id="btn-entities" class="nav-btn px-3 py-1 rounded text-sm">엔티티</button>
-      <button onclick="showView('questions')" id="btn-questions" class="nav-btn px-3 py-1 rounded text-sm">탐구 질문</button>
-      <button onclick="showView('conflicts')" id="btn-conflicts" class="nav-btn px-3 py-1 rounded text-sm">모순 관리</button>
-    </div>
-    <div class="flex gap-2">
+  <header class="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center gap-3 shrink-0">
+    <button id="menu-toggle" class="lg:hidden text-gray-400 hover:text-white text-xl">☰</button>
+    <h1 class="text-lg font-bold text-blue-400 shrink-0">🧠 지식 시스템</h1>
+    <nav id="nav-links" class="hidden lg:flex gap-1 flex-1 justify-center">
+      <button onclick="showView('notes')" id="btn-notes" class="nav-btn active">노트</button>
+      <button onclick="showView('graph')" id="btn-graph" class="nav-btn">그래프</button>
+      <button onclick="showView('entities')" id="btn-entities" class="nav-btn">엔티티</button>
+      <button onclick="showView('questions')" id="btn-questions" class="nav-btn">질문</button>
+      <button onclick="showView('conflicts')" id="btn-conflicts" class="nav-btn">모순</button>
+    </nav>
+    <div class="flex gap-2 shrink-0">
       <input type="text" id="search-input" placeholder="검색..."
-             class="bg-gray-700 border border-gray-600 rounded px-3 py-1 text-sm w-48"
+             class="bg-gray-700 border border-gray-600 rounded px-3 py-1 text-sm w-32 lg:w-48 focus:w-48 transition-all"
              onkeydown="if(event.key==='Enter') doSearch()">
       <button onclick="doSearch()" class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm">검색</button>
     </div>
   </header>
 
-  <!-- 메인 레이아웃 -->
-  <main class="flex flex-1 overflow-hidden">
+  <!-- 모바일 네비게이션 (토글) -->
+  <div id="mobile-nav" class="hidden bg-gray-800 border-b border-gray-700 px-4 py-2 flex gap-2 flex-wrap lg:hidden">
+    <button onclick="showView('notes')" class="nav-btn active mobile-nav-btn">노트</button>
+    <button onclick="showView('graph')" class="nav-btn mobile-nav-btn">그래프</button>
+    <button onclick="showView('entities')" class="nav-btn mobile-nav-btn">엔티티</button>
+    <button onclick="showView('questions')" class="nav-btn mobile-nav-btn">질문</button>
+    <button onclick="showView('conflicts')" class="nav-btn mobile-nav-btn">모순</button>
+  </div>
 
-    <!-- 사이드바: 노트 목록 -->
-    <aside id="sidebar" class="w-72 bg-gray-800 border-r border-gray-700 flex flex-col shrink-0">
-      <div class="p-2 border-b border-gray-700 flex justify-between items-center">
-        <span class="text-sm font-semibold text-gray-400">노트 목록</span>
-        <button onclick="createNewNote()" class="bg-green-600 hover:bg-green-700 px-2 py-1 rounded text-xs">+ 새 노트</button>
+  <!-- 메인 레이아웃 -->
+  <main class="flex flex-1 overflow-hidden relative">
+
+    <!-- 사이드바 오버레이 (모바일) -->
+    <div id="sidebar-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden" onclick="toggleSidebar()"></div>
+
+    <!-- 사이드바 -->
+    <aside id="sidebar" class="w-72 bg-gray-800 border-r border-gray-700 flex flex-col shrink-0 z-40
+                                fixed lg:relative h-full transform -translate-x-full lg:translate-x-0 transition-transform duration-200">
+      <div class="p-2 border-b border-gray-700 space-y-2">
+        <div class="flex justify-between items-center">
+          <span class="text-sm font-semibold text-gray-400">노트 목록</span>
+          <div class="flex gap-1">
+            <button onclick="createNewNote()" class="bg-green-600 hover:bg-green-700 px-2 py-1 rounded text-xs" title="새 노트 (Ctrl+N)">+ 새 노트</button>
+            <button onclick="toggleSidebar()" class="lg:hidden text-gray-400 hover:text-white px-1">✕</button>
+          </div>
+        </div>
+        <!-- 사이드바 검색 -->
+        <input type="text" id="sidebar-search" placeholder="노트 필터..."
+               class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+               oninput="filterNoteList()">
+        <!-- 필터 -->
+        <div class="flex gap-1">
+          <select id="domain-filter" class="flex-1 bg-gray-700 border border-gray-600 rounded px-1 py-1 text-xs" onchange="loadNoteList()">
+            <option value="">전체 도메인</option>
+          </select>
+          <select id="sort-select" class="bg-gray-700 border border-gray-600 rounded px-1 py-1 text-xs" onchange="loadNoteList()">
+            <option value="recent">최신순</option>
+            <option value="name">이름순</option>
+            <option value="confidence">신뢰도순</option>
+          </select>
+        </div>
       </div>
-      <div id="note-list" class="flex-1 overflow-y-auto p-2 space-y-1">
-        <!-- 동적 생성 -->
-      </div>
+      <div id="note-list" class="flex-1 overflow-y-auto p-2 space-y-1"></div>
     </aside>
 
     <!-- 콘텐츠 영역 -->
@@ -50,25 +84,37 @@
 
       <!-- 노트 뷰 -->
       <div id="view-notes" class="view flex-1 flex flex-col overflow-hidden">
-        <div class="flex border-b border-gray-700 shrink-0">
-          <button onclick="setEditorMode('edit')" id="btn-edit" class="tab-btn active px-4 py-2 text-sm">편집</button>
-          <button onclick="setEditorMode('preview')" id="btn-preview" class="tab-btn px-4 py-2 text-sm">미리보기</button>
+        <!-- 에디터 상단 바 -->
+        <div class="flex items-center gap-2 px-3 py-2 border-b border-gray-700 bg-gray-850 shrink-0 flex-wrap">
+          <button onclick="toggleSidebar()" class="lg:hidden text-gray-400 hover:text-white text-sm">☰</button>
+          <select id="template-select" class="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs">
+            <option value="">템플릿 선택...</option>
+            <option value="default">기본</option>
+            <option value="equipment">장비</option>
+            <option value="unit">부대</option>
+            <option value="person">인물</option>
+          </select>
           <div class="flex-1"></div>
-          <button onclick="saveCurrentNote()" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm m-1 rounded">저장</button>
-          <button onclick="deleteCurrentNote()" class="bg-red-600 hover:bg-red-700 px-3 py-2 text-sm m-1 rounded">삭제</button>
+          <span id="save-status" class="text-xs text-gray-500">●</span>
+          <button onclick="saveCurrentNote()" id="save-btn" class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm">저장</button>
+          <button onclick="deleteCurrentNote()" class="bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-sm">삭제</button>
         </div>
-        <div id="editor-area" class="flex-1 overflow-hidden">
-          <textarea id="markdown-editor"
-                    class="w-full h-full bg-gray-900 text-gray-100 p-4 font-mono text-sm resize-none outline-none"
-                    placeholder="마크다운으로 노트를 작성하세요..."></textarea>
-        </div>
-        <div id="preview-area" class="flex-1 overflow-y-auto p-4 hidden">
-          <div id="preview-content" class="prose prose-invert max-w-none"></div>
+        <!-- 에디터 -->
+        <div id="editor-wrapper" class="flex-1 overflow-hidden">
+          <textarea id="markdown-editor"></textarea>
         </div>
       </div>
 
       <!-- 그래프 뷰 -->
-      <div id="view-graph" class="view flex-1 hidden">
+      <div id="view-graph" class="view flex-1 hidden relative">
+        <!-- 그래프 컨트롤 오버레이 -->
+        <div class="absolute top-3 left-3 z-10 flex gap-1">
+          <button onclick="graphZoom(1)" class="bg-gray-800 bg-opacity-80 hover:bg-gray-700 text-white px-2 py-1 rounded text-sm border border-gray-600">+</button>
+          <button onclick="graphZoom(-1)" class="bg-gray-800 bg-opacity-80 hover:bg-gray-700 text-white px-2 py-1 rounded text-sm border border-gray-600">−</button>
+          <button onclick="graphReset()" class="bg-gray-800 bg-opacity-80 hover:bg-gray-700 text-white px-2 py-1 rounded text-sm border border-gray-600">리셋</button>
+        </div>
+        <!-- 범례 -->
+        <div id="graph-legend" class="absolute top-3 right-3 z-10 bg-gray-800 bg-opacity-90 rounded p-2 text-xs space-y-1 border border-gray-600"></div>
         <div id="graph-container" class="w-full h-full"></div>
       </div>
 
@@ -82,9 +128,7 @@
         <div class="p-4">
           <div class="flex justify-between items-center mb-4">
             <h2 class="text-lg font-bold">미해결 탐구 질문</h2>
-            <button onclick="generateNewQuestions()" class="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm">
-              AI 질문 생성
-            </button>
+            <button onclick="generateNewQuestions()" class="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm">AI 질문 생성</button>
           </div>
           <div id="questions-content" class="space-y-3"></div>
         </div>
@@ -102,7 +146,6 @@
       <div id="view-search" class="view flex-1 overflow-y-auto hidden">
         <div id="search-results" class="p-4 space-y-3"></div>
       </div>
-
     </div>
   </main>
 
@@ -111,6 +154,9 @@
     <span id="status-text">준비됨</span>
     <span id="stats-text">-</span>
   </footer>
+
+  <!-- 토스트 알림 -->
+  <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2 pointer-events-none"></div>
 
   <script src="js/app.js"></script>
 </body>
