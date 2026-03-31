@@ -21,6 +21,7 @@
       <button onclick="showView('graph')" id="btn-graph" class="nav-btn px-3 py-1 rounded text-sm">그래프</button>
       <button onclick="showView('entities')" id="btn-entities" class="nav-btn px-3 py-1 rounded text-sm">엔티티</button>
       <button onclick="showView('questions')" id="btn-questions" class="nav-btn px-3 py-1 rounded text-sm">탐구 질문</button>
+      <button onclick="showView('conflicts')" id="btn-conflicts" class="nav-btn px-3 py-1 rounded text-sm">모순 관리</button>
     </div>
     <div class="flex gap-2">
       <input type="text" id="search-input" placeholder="검색..."
@@ -86,6 +87,14 @@
             </button>
           </div>
           <div id="questions-content" class="space-y-3"></div>
+        </div>
+      </div>
+
+      <!-- 모순 관리 뷰 -->
+      <div id="view-conflicts" class="view flex-1 overflow-y-auto hidden">
+        <div class="p-4">
+          <h2 class="text-lg font-bold mb-4">모순 관리 (병렬 보존된 주장)</h2>
+          <div id="conflicts-content" class="space-y-4"></div>
         </div>
       </div>
 

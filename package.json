@@ -5,7 +5,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "knowledge": "node knowledge/src/server.js",
-    "init-db": "node knowledge/src/db/init.js"
+    "init-db": "node knowledge/src/db/init.js",
+    "migrate": "node knowledge/src/db/migrate.js"
   },
   "keywords": [],
   "author": "",

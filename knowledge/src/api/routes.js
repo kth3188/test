@@ -444,6 +444,64 @@ router.get('/conflicts', (req, res) => {
   }
 });
 
+// ==================== 일괄 파싱 API ====================
+
+// notes/ 폴더의 모든 .md 파일을 파싱
+router.post('/notes/batch-parse', async (req, res) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const notesDir = path.join(__dirname, '../../notes');
+
+    if (!fs.existsSync(notesDir)) {
+      return res.json({ success: true, parsed: 0, results: [] });
+    }
+
+    const files = fs.readdirSync(notesDir)
+      .filter(f => f.endsWith('.md') && !f.startsWith('.'));
+
+    const results = [];
+    for (const file of files) {
+      const filePath = path.join(notesDir, file);
+      const content = fs.readFileSync(filePath, 'utf-8');
+
+      // 이미 같은 제목의 노트가 있으면 건너뜀
+      const extraction = extractFromStructured(content);
+      const existingNotes = queries.listNotes({ limit: 1000 });
+      const exists = existingNotes.some(n => n.title === extraction.frontmatter.title);
+
+      if (exists) {
+        results.push({ file, status: 'skipped', reason: '동일 제목 노트 존재' });
+        continue;
+      }
+
+      try {
+        const saved = queries.saveNoteWithExtraction(extraction, content);
+        results.push({
+          file,
+          status: 'parsed',
+          noteId: Number(saved.noteId),
+          entityCount: saved.entityCount,
+          relationCount: saved.relationCount,
+        });
+      } catch (err) {
+        results.push({ file, status: 'error', reason: err.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      parsed: results.filter(r => r.status === 'parsed').length,
+      skipped: results.filter(r => r.status === 'skipped').length,
+      errors: results.filter(r => r.status === 'error').length,
+      results,
+    });
+  } catch (err) {
+    console.error('일괄 파싱 오류:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ==================== 조직 동기화 API ====================
 
 // 개인 → 조직 내보내기

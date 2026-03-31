@@ -70,6 +70,7 @@ function showView(view) {
   if (view === 'graph') loadGraph();
   if (view === 'entities') loadEntities();
   if (view === 'questions') loadQuestions();
+  if (view === 'conflicts') loadConflicts();
 }
 
 // ==================== 노트 목록 ====================
@@ -243,8 +244,27 @@ async function loadGraph() {
       return;
     }
 
+    // 노드 수 제한 (성능 보호)
+    const MAX_NODES = 200;
+    let displayNodes = data.nodes;
+    let displayEdges = data.edges;
+
+    if (data.nodes.length > MAX_NODES) {
+      // 관계가 많은 노드 우선 표시
+      const nodeRelCount = {};
+      data.edges.forEach(e => {
+        nodeRelCount[e.source] = (nodeRelCount[e.source] || 0) + 1;
+        nodeRelCount[e.target] = (nodeRelCount[e.target] || 0) + 1;
+      });
+      displayNodes = data.nodes
+        .sort((a, b) => (nodeRelCount[b.id] || 0) - (nodeRelCount[a.id] || 0))
+        .slice(0, MAX_NODES);
+      const nodeIds = new Set(displayNodes.map(n => n.id));
+      displayEdges = data.edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+    }
+
     // vis.js 데이터 변환
-    const nodes = new vis.DataSet(data.nodes.map(n => ({
+    const nodes = new vis.DataSet(displayNodes.map(n => ({
       id: n.id,
       label: n.name,
       title: `${n.name}\n유형: ${n.type || '미분류'}`,
@@ -252,7 +272,7 @@ async function loadGraph() {
       font: { color: '#e5e7eb', size: 12 },
     })));
 
-    const edges = new vis.DataSet(data.edges.map(e => ({
+    const edges = new vis.DataSet(displayEdges.map(e => ({
       id: e.id,
       from: e.source,
       to: e.target,
@@ -269,28 +289,23 @@ async function loadGraph() {
         barnesHut: { gravitationalConstant: -3000, springLength: 150 },
       },
       interaction: { hover: true, tooltipDelay: 200 },
-      nodes: {
-        shape: 'dot',
-        size: 16,
-        borderWidth: 2,
-      },
-      edges: {
-        smooth: { type: 'continuous' },
-      },
+      nodes: { shape: 'dot', size: 16, borderWidth: 2 },
+      edges: { smooth: { type: 'continuous' } },
     };
 
     if (graphNetwork) graphNetwork.destroy();
     graphNetwork = new vis.Network(container, { nodes, edges }, options);
 
-    // 노드 클릭 시 엔티티 상세
     graphNetwork.on('click', async (params) => {
       if (params.nodes.length > 0) {
         const entityId = params.nodes[0];
+        showView('entities');
         await showEntityDetail(entityId);
       }
     });
 
-    setStatus(`그래프 로드 완료 (노드 ${data.nodes.length}개, 엣지 ${data.edges.length}개)`);
+    const truncated = data.nodes.length > MAX_NODES ? ` (상위 ${MAX_NODES}개 표시, 전체 ${data.nodes.length}개)` : '';
+    setStatus(`그래프 로드 완료 (노드 ${displayNodes.length}개, 엣지 ${displayEdges.length}개${truncated})`);
   } catch (err) {
     setStatus('그래프 로드 실패: ' + err.message);
   }
@@ -380,6 +395,22 @@ async function showEntityDetail(id) {
         html += `<div class="text-sm text-gray-400">
           <span class="text-gray-300">${escHtml(attr.key)}</span>: ${escHtml(attr.value)}
         </div>`;
+      }
+    }
+
+    if (entity.claims && entity.claims.length > 0) {
+      html += '<h4 class="text-sm font-semibold text-yellow-400 mt-4 mb-2">주장 (모순 보존)</h4>';
+      for (const claim of entity.claims) {
+        const statusBadge = claim.status === 'verified' ? 'bg-green-900 text-green-300' :
+                             claim.status === 'rejected' ? 'bg-red-900 text-red-300' : 'bg-gray-700 text-gray-300';
+        html += `<div class="text-sm text-gray-400 mb-1">
+          <span class="${statusBadge} px-1 rounded text-xs">${escHtml(claim.status)}</span>
+          <span class="text-gray-300 ml-1">${escHtml(claim.field)}</span>: ${escHtml(claim.value)}
+          <span class="text-gray-600 ml-1">(${escHtml(claim.source_note_title || '?')})</span>
+        </div>`;
+      }
+      if (entity.conflicts && entity.conflicts.length > 0) {
+        html += `<div class="text-xs text-yellow-500 mt-1">⚠ ${entity.conflicts.length}개 필드에서 모순 발견</div>`;
       }
     }
 
@@ -480,6 +511,93 @@ async function generateNewQuestions() {
     setStatus(`새 질문 ${result.questions?.length || 0}개 생성 완료`);
   } catch (err) {
     setStatus('질문 생성 실패: ' + err.message);
+  }
+}
+
+// ==================== 모순 관리 ====================
+async function loadConflicts() {
+  try {
+    setStatus('모순 목록 로드 중...');
+    const data = await api('/conflicts');
+    const container = document.getElementById('conflicts-content');
+    container.innerHTML = '';
+
+    if (data.conflicts.length === 0) {
+      container.innerHTML = '<div class="text-gray-500">모순이 발견되지 않았습니다. 같은 개체에 대해 다른 노트에서 다른 설명을 작성하면 여기에 표시됩니다.</div>';
+      setStatus('모순 없음');
+      return;
+    }
+
+    for (const conflict of data.conflicts) {
+      const el = document.createElement('div');
+      el.className = 'entity-card';
+      el.innerHTML = `
+        <div class="flex justify-between items-center mb-2">
+          <div>
+            <span class="font-medium text-yellow-400">${escHtml(conflict.entity_name)}</span>
+            <span class="text-xs text-gray-500 ml-2">필드: ${escHtml(conflict.field)}</span>
+          </div>
+          <span class="text-xs bg-yellow-900 text-yellow-300 px-2 py-1 rounded">${conflict.claim_count}개 주장</span>
+        </div>
+        <div id="claims-${conflict.entity_id}-${escHtml(conflict.field)}" class="space-y-2 mt-2">
+          <button onclick="loadEntityClaims(${conflict.entity_id}, '${escHtml(conflict.field)}')"
+                  class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">주장 상세 보기</button>
+        </div>
+      `;
+      container.appendChild(el);
+    }
+
+    setStatus(`모순 ${data.conflicts.length}건`);
+  } catch (err) {
+    setStatus('모순 로드 실패: ' + err.message);
+  }
+}
+
+async function loadEntityClaims(entityId, field) {
+  try {
+    const data = await api(`/entities/${entityId}/claims`);
+    const containerId = `claims-${entityId}-${field}`;
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const fieldClaims = data.claims.filter(c => c.field === field);
+
+    let html = '';
+    for (const claim of fieldClaims) {
+      const statusColor = claim.status === 'verified' ? 'text-green-400' :
+                           claim.status === 'rejected' ? 'text-red-400 line-through' : 'text-gray-300';
+      html += `
+        <div class="bg-gray-800 rounded p-3 border border-gray-700">
+          <div class="${statusColor} text-sm">${escHtml(claim.value)}</div>
+          <div class="text-xs text-gray-500 mt-1">
+            출처: ${escHtml(claim.source_note_title || '알 수 없음')}
+            | 신뢰도: ${(claim.confidence * 100).toFixed(0)}%
+            | 상태: ${escHtml(claim.status)}
+          </div>
+          <div class="mt-2 flex gap-1">
+            ${claim.status === 'active' ? `
+              <button onclick="resolveClaim(${claim.id}, 'verified')" class="text-xs bg-green-700 hover:bg-green-600 px-2 py-1 rounded">검증됨</button>
+              <button onclick="resolveClaim(${claim.id}, 'rejected')" class="text-xs bg-red-700 hover:bg-red-600 px-2 py-1 rounded">거부</button>
+            ` : `
+              <button onclick="resolveClaim(${claim.id}, 'active')" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">재활성화</button>
+            `}
+          </div>
+        </div>
+      `;
+    }
+    container.innerHTML = html;
+  } catch (err) {
+    setStatus('주장 로드 실패: ' + err.message);
+  }
+}
+
+async function resolveClaim(claimId, status) {
+  try {
+    await api(`/claims/${claimId}/resolve`, { method: 'POST', body: { status } });
+    loadConflicts();
+    setStatus(`주장을 "${status}" 상태로 변경했습니다.`);
+  } catch (err) {
+    setStatus('처리 실패: ' + err.message);
   }
 }
 
