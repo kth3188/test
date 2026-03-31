@@ -1,17 +1,24 @@
 #!/usr/bin/env node
-// DB 초기화 스크립트
 const path = require('path');
-const { initDb } = require('./db');
+const { initDb, initSqlEngine } = require('./db');
 
-const personalDbPath = process.env.KNOWLEDGE_DB_PATH ||
-  path.join(__dirname, '../../db/personal.db');
-const orgDbPath = path.join(__dirname, '../../db/organization.db');
+async function main() {
+  await initSqlEngine();
 
-console.log('개인 DB 초기화 중...');
-initDb(personalDbPath);
+  const personalDbPath = process.env.KNOWLEDGE_DB_PATH ||
+    path.join(__dirname, '../../db/personal.db');
+  const orgDbPath = path.join(__dirname, '../../db/organization.db');
 
-console.log('조직 DB 초기화 중...');
-initDb(orgDbPath);
+  console.log('개인 DB 초기화 중...');
+  initDb(personalDbPath);
 
-console.log('모든 DB 초기화 완료!');
-process.exit(0);
+  console.log('조직 DB 초기화 중...');
+  initDb(orgDbPath);
+
+  console.log('모든 DB 초기화 완료!');
+}
+
+main().catch(err => {
+  console.error('DB 초기화 실패:', err);
+  process.exit(1);
+});

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-const Database = require('better-sqlite3');
+const Database = require('./sqlite-wrapper');
 const fs = require('fs');
 const path = require('path');
 
@@ -117,15 +117,17 @@ function migrate(dbPath = DEFAULT_DB_PATH) {
 
 // CLI 실행
 if (require.main === module) {
-  const dbPath = process.argv[2] || process.env.KNOWLEDGE_DB_PATH || DEFAULT_DB_PATH;
-  migrate(dbPath);
+  (async () => {
+    await Database.initialize();
+    const dbPath = process.argv[2] || process.env.KNOWLEDGE_DB_PATH || DEFAULT_DB_PATH;
+    migrate(dbPath);
 
-  // 조직 DB도 마이그레이션
-  const orgDbPath = path.join(path.dirname(dbPath), 'organization.db');
-  if (fs.existsSync(orgDbPath)) {
-    console.log('\n조직 DB 마이그레이션:');
-    migrate(orgDbPath);
-  }
+    const orgDbPath = path.join(path.dirname(dbPath), 'organization.db');
+    if (fs.existsSync(orgDbPath)) {
+      console.log('\n조직 DB 마이그레이션:');
+      migrate(orgDbPath);
+    }
+  })().catch(err => { console.error(err); process.exit(1); });
 }
 
 module.exports = { migrate, MIGRATIONS };
