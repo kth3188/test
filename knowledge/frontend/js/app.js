@@ -1,0 +1,680 @@
+// ==================== 상태 관리 ====================
+let currentNoteId = null;
+let currentView = 'notes';
+let graphNetwork = null;
+
+const API = '/api';
+
+// ==================== 초기화 ====================
+document.addEventListener('DOMContentLoaded', () => {
+  loadNoteList();
+  loadStats();
+
+  // 자동 저장 (30초마다)
+  const editor = document.getElementById('markdown-editor');
+  if (editor) {
+    let autoSaveTimer = null;
+    editor.addEventListener('input', () => {
+      clearTimeout(autoSaveTimer);
+      autoSaveTimer = setTimeout(() => {
+        if (currentNoteId && editor.value.trim()) {
+          saveCurrentNote();
+        }
+      }, 30000);
+    });
+  }
+});
+
+// 키보드 단축키
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    if (currentView === 'notes') saveCurrentNote();
+  }
+  if (e.key === 'Escape') {
+    document.getElementById('search-input').blur();
+  }
+});
+
+// ==================== API 호출 헬퍼 ====================
+async function api(path, options = {}) {
+  const { method = 'GET', body } = options;
+  const config = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) config.body = JSON.stringify(body);
+
+  const res = await fetch(API + path, config);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: '요청 실패' }));
+    throw new Error(err.error || '요청 실패');
+  }
+  return res.json();
+}
+
+function setStatus(text) {
+  document.getElementById('status-text').textContent = text;
+}
+
+// ==================== 뷰 전환 ====================
+function showView(view) {
+  currentView = view;
+  document.querySelectorAll('.view').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+
+  document.getElementById(`view-${view}`).classList.remove('hidden');
+  document.getElementById(`btn-${view}`).classList.add('active');
+
+  // 사이드바 표시/숨김
+  document.getElementById('sidebar').style.display =
+    (view === 'notes' || view === 'search') ? 'flex' : 'none';
+
+  if (view === 'graph') loadGraph();
+  if (view === 'entities') loadEntities();
+  if (view === 'questions') loadQuestions();
+  if (view === 'conflicts') loadConflicts();
+}
+
+// ==================== 노트 목록 ====================
+async function loadNoteList() {
+  try {
+    const data = await api('/notes');
+    const list = document.getElementById('note-list');
+    list.innerHTML = '';
+
+    if (data.notes.length === 0) {
+      list.innerHTML = '<div class="text-gray-500 text-sm p-2">노트가 없습니다. 새 노트를 만들어보세요.</div>';
+      return;
+    }
+
+    for (const note of data.notes) {
+      const el = document.createElement('div');
+      el.className = `note-item ${note.id === currentNoteId ? 'active' : ''}`;
+      el.innerHTML = `
+        <div class="text-sm font-medium truncate">${escHtml(note.title)}</div>
+        <div class="text-xs text-gray-500 flex gap-2 mt-1">
+          <span>${escHtml(note.domain || '미분류')}</span>
+          <span class="badge-${escHtml(note.confidence)} px-1 rounded text-xs">${escHtml(note.confidence)}</span>
+        </div>
+      `;
+      el.onclick = () => loadNote(note.id);
+      list.appendChild(el);
+    }
+  } catch (err) {
+    setStatus('노트 목록 로드 실패: ' + err.message);
+  }
+}
+
+// ==================== 노트 편집 ====================
+async function loadNote(id) {
+  try {
+    const note = await api(`/notes/${id}`);
+    currentNoteId = id;
+    document.getElementById('markdown-editor').value = note.content;
+    setEditorMode('edit');
+    loadNoteList(); // 활성 상태 업데이트
+    setStatus(`노트 로드: ${note.title}`);
+  } catch (err) {
+    setStatus('노트 로드 실패: ' + err.message);
+  }
+}
+
+function createNewNote() {
+  currentNoteId = null;
+  const template = `---
+title: 새 노트
+domain:
+created: ${new Date().toISOString().split('T')[0]}
+tags: []
+confidence: medium
+---
+
+# 새 노트
+
+## 정의
+여기에 설명을 작성하세요.
+
+## 관련 개체
+- **[개체명]**: 설명 (관계: 관련)
+
+## 속성
+- 키: 값
+
+## 출처/근거
+-
+
+## 미해결 질문
+- `;
+
+  document.getElementById('markdown-editor').value = template;
+  setEditorMode('edit');
+  showView('notes');
+  setStatus('새 노트 작성 중');
+}
+
+async function saveCurrentNote() {
+  const content = document.getElementById('markdown-editor').value;
+  if (!content.trim()) {
+    setStatus('내용이 비어있습니다.');
+    return;
+  }
+
+  const saveBtn = document.querySelector('[onclick="saveCurrentNote()"]');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '저장 중...'; }
+
+  try {
+    setStatus('저장 중...');
+
+    if (currentNoteId) {
+      await api(`/notes/${currentNoteId}`, { method: 'PUT', body: { content } });
+      setStatus('노트 수정 완료');
+    } else {
+      const result = await api('/notes', { method: 'POST', body: { content } });
+      currentNoteId = result.noteId;
+      setStatus(`노트 저장 완료 (엔티티 ${result.entityCount}개, 관계 ${result.relationCount}개 추출)`);
+    }
+
+    loadNoteList();
+    loadStats();
+  } catch (err) {
+    setStatus('저장 실패: ' + err.message);
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '저장'; }
+  }
+}
+
+async function deleteCurrentNote() {
+  if (!currentNoteId) return;
+  if (!confirm('이 노트를 삭제하시겠습니까?')) return;
+
+  try {
+    await api(`/notes/${currentNoteId}`, { method: 'DELETE' });
+    currentNoteId = null;
+    document.getElementById('markdown-editor').value = '';
+    loadNoteList();
+    loadStats();
+    setStatus('노트 삭제 완료');
+  } catch (err) {
+    setStatus('삭제 실패: ' + err.message);
+  }
+}
+
+// ==================== 에디터 모드 ====================
+function setEditorMode(mode) {
+  const editorArea = document.getElementById('editor-area');
+  const previewArea = document.getElementById('preview-area');
+
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+
+  if (mode === 'edit') {
+    editorArea.classList.remove('hidden');
+    previewArea.classList.add('hidden');
+    document.getElementById('btn-edit').classList.add('active');
+  } else {
+    editorArea.classList.add('hidden');
+    previewArea.classList.remove('hidden');
+    document.getElementById('btn-preview').classList.add('active');
+
+    // 간단한 마크다운 → HTML 변환
+    const md = document.getElementById('markdown-editor').value;
+    document.getElementById('preview-content').innerHTML = renderMarkdown(md);
+  }
+}
+
+function renderMarkdown(md) {
+  // frontmatter 제거
+  const text = md.replace(/^---[\s\S]*?---\n*/m, '');
+  // marked.js로 렌더링 후 DOMPurify로 XSS 방어
+  if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+    return DOMPurify.sanitize(marked.parse(text));
+  }
+  // 폴백: 줄바꿈만 처리 (XSS 방어를 위해 전체 이스케이프)
+  return '<pre style="white-space:pre-wrap;font-family:inherit;">' + escHtml(text) + '</pre>';
+}
+
+// ==================== 그래프 시각화 ====================
+async function loadGraph() {
+  try {
+    setStatus('그래프 로드 중...');
+    const data = await api('/graph');
+
+    const container = document.getElementById('graph-container');
+
+    if (data.nodes.length === 0) {
+      container.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">엔티티가 없습니다. 노트를 추가하여 그래프를 생성하세요.</div>';
+      setStatus('그래프 데이터 없음');
+      return;
+    }
+
+    // 노드 수 제한 (성능 보호)
+    const MAX_NODES = 200;
+    let displayNodes = data.nodes;
+    let displayEdges = data.edges;
+
+    if (data.nodes.length > MAX_NODES) {
+      // 관계가 많은 노드 우선 표시
+      const nodeRelCount = {};
+      data.edges.forEach(e => {
+        nodeRelCount[e.source] = (nodeRelCount[e.source] || 0) + 1;
+        nodeRelCount[e.target] = (nodeRelCount[e.target] || 0) + 1;
+      });
+      displayNodes = data.nodes
+        .sort((a, b) => (nodeRelCount[b.id] || 0) - (nodeRelCount[a.id] || 0))
+        .slice(0, MAX_NODES);
+      const nodeIds = new Set(displayNodes.map(n => n.id));
+      displayEdges = data.edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+    }
+
+    // vis.js 데이터 변환
+    const nodes = new vis.DataSet(displayNodes.map(n => ({
+      id: n.id,
+      label: n.name,
+      title: `${n.name}\n유형: ${n.type || '미분류'}`,
+      color: getTypeColor(n.type),
+      font: { color: '#e5e7eb', size: 12 },
+    })));
+
+    const edges = new vis.DataSet(displayEdges.map(e => ({
+      id: e.id,
+      from: e.source,
+      to: e.target,
+      label: e.label,
+      font: { color: '#9ca3af', size: 10, strokeWidth: 0 },
+      color: { color: '#4b5563', highlight: '#60a5fa' },
+      arrows: 'to',
+      width: Math.max(1, e.confidence * 3),
+    })));
+
+    const options = {
+      physics: {
+        stabilization: { iterations: 150 },
+        barnesHut: { gravitationalConstant: -3000, springLength: 150 },
+      },
+      interaction: { hover: true, tooltipDelay: 200 },
+      nodes: { shape: 'dot', size: 16, borderWidth: 2 },
+      edges: { smooth: { type: 'continuous' } },
+    };
+
+    if (graphNetwork) graphNetwork.destroy();
+    graphNetwork = new vis.Network(container, { nodes, edges }, options);
+
+    graphNetwork.on('click', async (params) => {
+      if (params.nodes.length > 0) {
+        const entityId = params.nodes[0];
+        showView('entities');
+        await showEntityDetail(entityId);
+      }
+    });
+
+    const truncated = data.nodes.length > MAX_NODES ? ` (상위 ${MAX_NODES}개 표시, 전체 ${data.nodes.length}개)` : '';
+    setStatus(`그래프 로드 완료 (노드 ${displayNodes.length}개, 엣지 ${displayEdges.length}개${truncated})`);
+  } catch (err) {
+    setStatus('그래프 로드 실패: ' + err.message);
+  }
+}
+
+function getTypeColor(type) {
+  const colors = {
+    '개념': '#3b82f6',
+    '사물': '#10b981',
+    '장소': '#f59e0b',
+    '인물': '#ef4444',
+    '조직': '#8b5cf6',
+    '사건': '#ec4899',
+    '기술': '#06b6d4',
+    '장비': '#10b981',
+  };
+  return { background: colors[type] || '#6b7280', border: '#374151' };
+}
+
+// ==================== 엔티티 목록 ====================
+async function loadEntities() {
+  try {
+    const data = await api('/entities');
+    const container = document.getElementById('entities-content');
+    container.innerHTML = '';
+
+    if (data.entities.length === 0) {
+      container.innerHTML = '<div class="text-gray-500">엔티티가 없습니다.</div>';
+      return;
+    }
+
+    for (const entity of data.entities) {
+      const el = document.createElement('div');
+      el.className = 'entity-card cursor-pointer';
+      el.innerHTML = `
+        <div class="flex justify-between items-start">
+          <div>
+            <span class="font-medium text-blue-400">${escHtml(entity.name)}</span>
+            <span class="text-xs text-gray-500 ml-2">${escHtml(entity.type || '미분류')}</span>
+          </div>
+          <button onclick="event.stopPropagation(); exportEntityMarkdown(${entity.id})"
+                  class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">MD 변환</button>
+        </div>
+        <div class="text-sm text-gray-400 mt-1">${escHtml(entity.description || '')}</div>
+      `;
+      el.onclick = () => showEntityDetail(entity.id);
+      container.appendChild(el);
+    }
+
+    setStatus(`엔티티 ${data.entities.length}개`);
+  } catch (err) {
+    setStatus('엔티티 로드 실패: ' + err.message);
+  }
+}
+
+async function showEntityDetail(id) {
+  try {
+    const entity = await api(`/entities/${id}`);
+    const container = document.getElementById('entities-content');
+
+    let html = `
+      <div class="entity-card border-blue-500">
+        <h3 class="text-lg font-bold text-blue-400">${escHtml(entity.name)}</h3>
+        <div class="text-sm text-gray-400 mt-1">유형: ${escHtml(entity.type || '미분류')}</div>
+        <div class="text-sm mt-2">${escHtml(entity.description || '설명 없음')}</div>
+
+        <h4 class="text-sm font-semibold text-gray-300 mt-4 mb-2">관계</h4>
+        <div class="space-y-1">
+    `;
+
+    for (const rel of entity.relations) {
+      const isSubject = rel.subject_id === entity.id;
+      const otherName = isSubject ? rel.object_name : rel.subject_name;
+      const arrow = isSubject ? '→' : '←';
+      html += `<div class="text-sm text-gray-400">
+        ${arrow} <span class="text-yellow-400">${escHtml(rel.predicate)}</span>
+        <span class="text-blue-300 cursor-pointer" onclick="showEntityDetail(${isSubject ? rel.object_id : rel.subject_id})">${escHtml(otherName)}</span>
+        <span class="text-gray-600">(${(rel.confidence * 100).toFixed(0)}%)</span>
+      </div>`;
+    }
+
+    html += '</div>';
+
+    if (entity.attributes.length > 0) {
+      html += '<h4 class="text-sm font-semibold text-gray-300 mt-4 mb-2">속성</h4>';
+      for (const attr of entity.attributes) {
+        html += `<div class="text-sm text-gray-400">
+          <span class="text-gray-300">${escHtml(attr.key)}</span>: ${escHtml(attr.value)}
+        </div>`;
+      }
+    }
+
+    if (entity.claims && entity.claims.length > 0) {
+      html += '<h4 class="text-sm font-semibold text-yellow-400 mt-4 mb-2">주장 (모순 보존)</h4>';
+      for (const claim of entity.claims) {
+        const statusBadge = claim.status === 'verified' ? 'bg-green-900 text-green-300' :
+                             claim.status === 'rejected' ? 'bg-red-900 text-red-300' : 'bg-gray-700 text-gray-300';
+        html += `<div class="text-sm text-gray-400 mb-1">
+          <span class="${statusBadge} px-1 rounded text-xs">${escHtml(claim.status)}</span>
+          <span class="text-gray-300 ml-1">${escHtml(claim.field)}</span>: ${escHtml(claim.value)}
+          <span class="text-gray-600 ml-1">(${escHtml(claim.source_note_title || '?')})</span>
+        </div>`;
+      }
+      if (entity.conflicts && entity.conflicts.length > 0) {
+        html += `<div class="text-xs text-yellow-500 mt-1">⚠ ${entity.conflicts.length}개 필드에서 모순 발견</div>`;
+      }
+    }
+
+    html += `
+        <div class="mt-4 flex gap-2">
+          <button onclick="exportEntityMarkdown(${entity.id})" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm">마크다운으로 변환</button>
+          <button onclick="loadEntities()" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm">목록으로</button>
+        </div>
+      </div>
+    `;
+
+    container.innerHTML = html;
+  } catch (err) {
+    setStatus('엔티티 로드 실패: ' + err.message);
+  }
+}
+
+async function exportEntityMarkdown(id) {
+  try {
+    const data = await api(`/entities/${id}/markdown`);
+    // 새 노트로 열기
+    currentNoteId = null;
+    document.getElementById('markdown-editor').value = data.markdown;
+    showView('notes');
+    setEditorMode('edit');
+    setStatus('엔티티를 마크다운 노트로 변환했습니다. 저장하면 새 노트로 생성됩니다.');
+  } catch (err) {
+    setStatus('변환 실패: ' + err.message);
+  }
+}
+
+// ==================== 질문 관리 ====================
+async function loadQuestions() {
+  try {
+    const data = await api('/questions');
+    const container = document.getElementById('questions-content');
+    container.innerHTML = '';
+
+    if (data.questions.length === 0) {
+      container.innerHTML = '<div class="text-gray-500">미해결 질문이 없습니다.</div>';
+      return;
+    }
+
+    for (const q of data.questions) {
+      const el = document.createElement('div');
+      el.className = 'question-card';
+      el.innerHTML = `
+        <div class="text-sm">${escHtml(q.question)}</div>
+        <div class="text-xs text-gray-500 mt-1">
+          ${q.entity_name ? `관련: ${escHtml(q.entity_name)}` : ''}
+          <span class="ml-2">${escHtml(q.created_at)}</span>
+        </div>
+        <div class="mt-2 flex gap-2">
+          <input type="text" placeholder="답변 입력..."
+                 class="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm"
+                 id="answer-${q.id}">
+          <button onclick="answerQuestion(${q.id})" class="bg-green-600 hover:bg-green-700 px-2 py-1 rounded text-xs">답변</button>
+          <button onclick="dismissQuestion(${q.id})" class="bg-gray-600 hover:bg-gray-700 px-2 py-1 rounded text-xs">무시</button>
+        </div>
+      `;
+      container.appendChild(el);
+    }
+
+    setStatus(`미해결 질문 ${data.questions.length}개`);
+  } catch (err) {
+    setStatus('질문 로드 실패: ' + err.message);
+  }
+}
+
+async function answerQuestion(id) {
+  const input = document.getElementById(`answer-${id}`);
+  const answer = input.value.trim();
+  if (!answer) return;
+
+  try {
+    await api(`/questions/${id}/answer`, { method: 'POST', body: { answer } });
+    loadQuestions();
+    setStatus('질문에 답변했습니다.');
+  } catch (err) {
+    setStatus('답변 실패: ' + err.message);
+  }
+}
+
+async function dismissQuestion(id) {
+  try {
+    await api(`/questions/${id}/dismiss`, { method: 'POST' });
+    loadQuestions();
+  } catch (err) {
+    setStatus('처리 실패: ' + err.message);
+  }
+}
+
+async function generateNewQuestions() {
+  try {
+    setStatus('AI가 탐구 질문을 생성하는 중...');
+    const result = await api('/questions/generate', { method: 'POST', body: { limit: 5 } });
+    loadQuestions();
+    setStatus(`새 질문 ${result.questions?.length || 0}개 생성 완료`);
+  } catch (err) {
+    setStatus('질문 생성 실패: ' + err.message);
+  }
+}
+
+// ==================== 모순 관리 ====================
+async function loadConflicts() {
+  try {
+    setStatus('모순 목록 로드 중...');
+    const data = await api('/conflicts');
+    const container = document.getElementById('conflicts-content');
+    container.innerHTML = '';
+
+    if (data.conflicts.length === 0) {
+      container.innerHTML = '<div class="text-gray-500">모순이 발견되지 않았습니다. 같은 개체에 대해 다른 노트에서 다른 설명을 작성하면 여기에 표시됩니다.</div>';
+      setStatus('모순 없음');
+      return;
+    }
+
+    for (const conflict of data.conflicts) {
+      const el = document.createElement('div');
+      el.className = 'entity-card';
+      el.innerHTML = `
+        <div class="flex justify-between items-center mb-2">
+          <div>
+            <span class="font-medium text-yellow-400">${escHtml(conflict.entity_name)}</span>
+            <span class="text-xs text-gray-500 ml-2">필드: ${escHtml(conflict.field)}</span>
+          </div>
+          <span class="text-xs bg-yellow-900 text-yellow-300 px-2 py-1 rounded">${conflict.claim_count}개 주장</span>
+        </div>
+        <div id="claims-${conflict.entity_id}-${escHtml(conflict.field)}" class="space-y-2 mt-2">
+          <button onclick="loadEntityClaims(${conflict.entity_id}, '${escHtml(conflict.field)}')"
+                  class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">주장 상세 보기</button>
+        </div>
+      `;
+      container.appendChild(el);
+    }
+
+    setStatus(`모순 ${data.conflicts.length}건`);
+  } catch (err) {
+    setStatus('모순 로드 실패: ' + err.message);
+  }
+}
+
+async function loadEntityClaims(entityId, field) {
+  try {
+    const data = await api(`/entities/${entityId}/claims`);
+    const containerId = `claims-${entityId}-${field}`;
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const fieldClaims = data.claims.filter(c => c.field === field);
+
+    let html = '';
+    for (const claim of fieldClaims) {
+      const statusColor = claim.status === 'verified' ? 'text-green-400' :
+                           claim.status === 'rejected' ? 'text-red-400 line-through' : 'text-gray-300';
+      html += `
+        <div class="bg-gray-800 rounded p-3 border border-gray-700">
+          <div class="${statusColor} text-sm">${escHtml(claim.value)}</div>
+          <div class="text-xs text-gray-500 mt-1">
+            출처: ${escHtml(claim.source_note_title || '알 수 없음')}
+            | 신뢰도: ${(claim.confidence * 100).toFixed(0)}%
+            | 상태: ${escHtml(claim.status)}
+          </div>
+          <div class="mt-2 flex gap-1">
+            ${claim.status === 'active' ? `
+              <button onclick="resolveClaim(${claim.id}, 'verified')" class="text-xs bg-green-700 hover:bg-green-600 px-2 py-1 rounded">검증됨</button>
+              <button onclick="resolveClaim(${claim.id}, 'rejected')" class="text-xs bg-red-700 hover:bg-red-600 px-2 py-1 rounded">거부</button>
+            ` : `
+              <button onclick="resolveClaim(${claim.id}, 'active')" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">재활성화</button>
+            `}
+          </div>
+        </div>
+      `;
+    }
+    container.innerHTML = html;
+  } catch (err) {
+    setStatus('주장 로드 실패: ' + err.message);
+  }
+}
+
+async function resolveClaim(claimId, status) {
+  try {
+    await api(`/claims/${claimId}/resolve`, { method: 'POST', body: { status } });
+    loadConflicts();
+    setStatus(`주장을 "${status}" 상태로 변경했습니다.`);
+  } catch (err) {
+    setStatus('처리 실패: ' + err.message);
+  }
+}
+
+// ==================== 검색 ====================
+async function doSearch() {
+  const query = document.getElementById('search-input').value.trim();
+  if (!query) return;
+
+  try {
+    setStatus('검색 중...');
+    showView('notes'); // 노트 뷰에서 검색 결과 표시
+
+    const data = await api(`/search?q=${encodeURIComponent(query)}`);
+    const list = document.getElementById('note-list');
+    list.innerHTML = '';
+
+    // 노트 결과
+    if (data.notes.length > 0) {
+      const header = document.createElement('div');
+      header.className = 'text-xs text-gray-500 p-1 font-semibold';
+      header.textContent = `노트 (${data.notes.length})`;
+      list.appendChild(header);
+
+      for (const note of data.notes) {
+        const el = document.createElement('div');
+        el.className = 'note-item';
+        el.innerHTML = `
+          <div class="text-sm font-medium truncate">${escHtml(note.title)}</div>
+          <div class="text-xs text-gray-500">${escHtml(note.snippet || '')}</div>
+        `;
+        el.onclick = () => loadNote(note.id);
+        list.appendChild(el);
+      }
+    }
+
+    // 엔티티 결과
+    if (data.entities.length > 0) {
+      const header = document.createElement('div');
+      header.className = 'text-xs text-gray-500 p-1 font-semibold mt-2';
+      header.textContent = `엔티티 (${data.entities.length})`;
+      list.appendChild(header);
+
+      for (const entity of data.entities) {
+        const el = document.createElement('div');
+        el.className = 'note-item';
+        el.innerHTML = `
+          <div class="text-sm font-medium truncate text-blue-400">${escHtml(entity.name)}</div>
+          <div class="text-xs text-gray-500">${entity.type || '미분류'}</div>
+        `;
+        el.onclick = () => { showView('entities'); showEntityDetail(entity.id); };
+        list.appendChild(el);
+      }
+    }
+
+    if (data.notes.length === 0 && data.entities.length === 0) {
+      list.innerHTML = '<div class="text-gray-500 text-sm p-2">검색 결과가 없습니다.</div>';
+    }
+
+    setStatus(`검색 완료: 노트 ${data.notes.length}개, 엔티티 ${data.entities.length}개`);
+  } catch (err) {
+    setStatus('검색 실패: ' + err.message);
+  }
+}
+
+// ==================== 통계 ====================
+async function loadStats() {
+  try {
+    const stats = await api('/stats');
+    document.getElementById('stats-text').textContent =
+      `노트: ${stats.noteCount} | 엔티티: ${stats.entityCount} | 관계: ${stats.relationCount} | 질문: ${stats.questionCount}`;
+  } catch {
+    // 무시
+  }
+}
+
+// ==================== 유틸리티 ====================
+function escHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}

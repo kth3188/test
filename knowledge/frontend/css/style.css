@@ -1,0 +1,495 @@
+/* ==================== 디자인 시스템 - CSS 변수 (다크 테마) ==================== */
+
+:root {
+  /* 색상 */
+  --bg-primary: #111827;
+  --bg-secondary: #1f2937;
+  --bg-tertiary: #374151;
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --border: #374151;
+
+  /* 레이아웃 */
+  --sidebar-width: 280px;
+  --header-height: 44px;
+  --footer-height: 28px;
+  --transition-speed: 0.25s;
+}
+
+/* ==================== 기본 리셋 ==================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ==================== 네비게이션 ==================== */
+.nav-btn {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.nav-btn:hover {
+  background: var(--bg-tertiary);
+  color: #e5e7eb;
+}
+.nav-btn.active {
+  background: var(--accent);
+  color: white;
+}
+
+/* ==================== 사이드바 ==================== */
+.sidebar {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  transition: transform var(--transition-speed) ease, min-width var(--transition-speed) ease, width var(--transition-speed) ease;
+  z-index: 30;
+  overflow-y: auto;
+}
+.sidebar.collapsed {
+  transform: translateX(calc(-1 * var(--sidebar-width)));
+  min-width: 0;
+  width: 0;
+  overflow: hidden;
+}
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 20;
+  display: none;
+  opacity: 0;
+  transition: opacity var(--transition-speed) ease;
+}
+.sidebar-overlay.visible {
+  display: block;
+  opacity: 1;
+}
+
+/* ==================== 노트 목록 ==================== */
+.note-item {
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  border-left: 3px solid transparent;
+  margin-bottom: 2px;
+}
+.note-item:hover {
+  background: var(--bg-tertiary);
+}
+.note-item:active {
+  background: rgba(59, 130, 246, 0.15);
+}
+.note-item.active {
+  background: #1e3a5f;
+  border-left-color: var(--accent);
+}
+.note-item .note-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+.note-item .note-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ==================== EasyMDE 다크테마 오버라이드 ==================== */
+.EasyMDEContainer {
+  background: var(--bg-primary) !important;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.EasyMDEContainer .CodeMirror {
+  flex: 1;
+  background: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border) !important;
+  border: none !important;
+  border-radius: 0 !important;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.EasyMDEContainer .CodeMirror-cursor {
+  border-left-color: var(--text-primary) !important;
+}
+.EasyMDEContainer .CodeMirror-selected {
+  background: rgba(59, 130, 246, 0.3) !important;
+}
+.EasyMDEContainer .CodeMirror-gutters {
+  background: var(--bg-primary) !important;
+  border-right: 1px solid var(--border) !important;
+}
+.EasyMDEContainer .CodeMirror-linenumber {
+  color: #4b5563 !important;
+}
+
+/* EasyMDE 툴바 다크테마 */
+.EasyMDEContainer .editor-toolbar {
+  background: var(--bg-secondary) !important;
+  border-color: var(--border) !important;
+  border: none !important;
+  border-bottom: 1px solid var(--border) !important;
+  padding: 4px 8px !important;
+  opacity: 1 !important;
+}
+.EasyMDEContainer .editor-toolbar button {
+  color: var(--text-secondary) !important;
+  border: none !important;
+  border-radius: 4px !important;
+}
+.EasyMDEContainer .editor-toolbar button:hover,
+.EasyMDEContainer .editor-toolbar button.active {
+  background: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+}
+.EasyMDEContainer .editor-toolbar i.separator {
+  border-left-color: var(--border) !important;
+}
+
+/* EasyMDE 프리뷰 다크테마 */
+.EasyMDEContainer .editor-preview,
+.EasyMDEContainer .editor-preview-side {
+  background: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+  border: none !important;
+  padding: 16px !important;
+}
+.EasyMDEContainer .editor-preview h1,
+.EasyMDEContainer .editor-preview-side h1,
+.EasyMDEContainer .editor-preview h2,
+.EasyMDEContainer .editor-preview-side h2,
+.EasyMDEContainer .editor-preview h3,
+.EasyMDEContainer .editor-preview-side h3 {
+  color: #93c5fd !important;
+}
+.EasyMDEContainer .editor-preview h1,
+.EasyMDEContainer .editor-preview-side h1 {
+  font-size: 1.5em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+.EasyMDEContainer .editor-preview h2,
+.EasyMDEContainer .editor-preview-side h2 {
+  font-size: 1.25em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+.EasyMDEContainer .editor-preview strong,
+.EasyMDEContainer .editor-preview-side strong {
+  color: #fbbf24 !important;
+}
+.EasyMDEContainer .editor-preview code,
+.EasyMDEContainer .editor-preview-side code {
+  background: var(--bg-secondary);
+  color: #f472b6;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.EasyMDEContainer .editor-preview pre,
+.EasyMDEContainer .editor-preview-side pre {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+}
+.EasyMDEContainer .editor-preview ul,
+.EasyMDEContainer .editor-preview-side ul {
+  padding-left: 1.5em;
+}
+.EasyMDEContainer .editor-preview a,
+.EasyMDEContainer .editor-preview-side a {
+  color: #60a5fa;
+}
+
+/* EasyMDE 구문 하이라이팅 */
+.EasyMDEContainer .cm-header { color: #93c5fd !important; }
+.EasyMDEContainer .cm-strong { color: #fbbf24 !important; }
+.EasyMDEContainer .cm-link { color: #60a5fa !important; }
+.EasyMDEContainer .cm-em { color: #c4b5fd !important; }
+.EasyMDEContainer .cm-comment { color: var(--text-muted) !important; }
+.EasyMDEContainer .cm-url { color: var(--text-muted) !important; }
+
+/* EasyMDE 상태바 */
+.EasyMDEContainer .editor-statusbar {
+  color: var(--text-muted) !important;
+  display: none !important;
+}
+
+/* ==================== 카드 ==================== */
+.entity-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.entity-card:hover {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.1);
+}
+
+.question-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  transition: border-color 0.15s ease;
+}
+.question-card:hover {
+  border-color: var(--warning);
+}
+
+/* ==================== 배지 ==================== */
+.badge-high { background: #065f46; color: #6ee7b7; }
+.badge-medium { background: #78350f; color: #fcd34d; }
+.badge-low { background: #7f1d1d; color: #fca5a5; }
+
+/* ==================== 그래프 ==================== */
+#graph-container {
+  background: var(--bg-primary);
+}
+
+.graph-ctrl-btn {
+  width: 32px;
+  height: 32px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.15s ease;
+}
+.graph-ctrl-btn:hover {
+  background: var(--bg-tertiary);
+  color: #e5e7eb;
+}
+
+/* ==================== 모순 관리 ==================== */
+.claim-verified { border-left: 3px solid var(--success); }
+.claim-rejected { border-left: 3px solid var(--danger); opacity: 0.6; }
+.claim-active { border-left: 3px solid var(--warning); }
+
+/* ==================== 토스트 알림 ==================== */
+.toast {
+  pointer-events: auto;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  animation: toast-in 0.3s ease-out;
+  max-width: 360px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.toast-success { background: #065f46; color: #6ee7b7; border-left: 4px solid var(--success); }
+.toast-error { background: #7f1d1d; color: #fca5a5; border-left: 4px solid var(--danger); }
+.toast-info { background: #1e3a5f; color: #93c5fd; border-left: 4px solid var(--accent); }
+.toast-warning { background: #78350f; color: #fcd34d; border-left: 4px solid var(--warning); }
+.toast-close {
+  cursor: pointer;
+  margin-left: auto;
+  opacity: 0.7;
+  font-size: 16px;
+  transition: opacity 0.15s ease;
+}
+.toast-close:hover { opacity: 1; }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes toast-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(100%); }
+}
+
+/* ==================== 저장 상태 인디케이터 ==================== */
+.save-saved { color: var(--success); }
+.save-modified { color: var(--warning); }
+.save-saving { color: var(--accent); animation: pulse 1s infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ==================== 로딩 스피너 ==================== */
+.spinner {
+  border: 3px solid var(--bg-tertiary);
+  border-top: 3px solid var(--accent);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ==================== prose-invert (마크다운 렌더링) ==================== */
+.prose-invert {
+  color: var(--text-primary);
+}
+.prose-invert h1,
+.prose-invert h2,
+.prose-invert h3,
+.prose-invert h4 {
+  color: #93c5fd;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+.prose-invert p {
+  margin-bottom: 0.75em;
+}
+.prose-invert a {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+.prose-invert strong {
+  color: #fbbf24;
+}
+.prose-invert code {
+  background: var(--bg-secondary);
+  color: #f472b6;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 0.875em;
+}
+.prose-invert pre {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+}
+.prose-invert ul,
+.prose-invert ol {
+  padding-left: 1.5em;
+  margin-bottom: 0.75em;
+}
+.prose-invert blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 1em;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+.prose-invert table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.prose-invert th,
+.prose-invert td {
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  text-align: left;
+}
+.prose-invert th {
+  background: var(--bg-secondary);
+  font-weight: 600;
+}
+
+/* ==================== 스크롤바 ==================== */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Firefox 스크롤바 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #4b5563 var(--bg-secondary);
+}
+
+/* ==================== 반응형 ==================== */
+
+/* 모바일: 사이드바 오버레이 모드 */
+@media (max-width: 1023px) {
+  #sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    transform: translateX(calc(-1 * var(--sidebar-width)));
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.3);
+  }
+
+  .sidebar-open #sidebar {
+    transform: translateX(0);
+  }
+
+  .sidebar-open #sidebar-overlay {
+    display: block;
+  }
+}
+
+@media (max-width: 767px) {
+  .header-bar { padding: 4px 8px; }
+  .nav-btn {
+    padding: 10px 14px;
+    font-size: 14px;
+    min-height: 44px;
+  }
+  #editor-wrapper { min-height: 300px; }
+
+  .toast {
+    max-width: calc(100vw - 32px);
+    margin: 0 16px;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  :root { --sidebar-width: 240px; }
+}
+
+/* ==================== 유틸리티 ==================== */
+.bg-gray-850 { background-color: #1a202c; }
+
+/* 포커스 스타일 (접근성) */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 텍스트 선택 색상 */
+::selection {
+  background: rgba(59, 130, 246, 0.3);
+  color: var(--text-primary);
+}
